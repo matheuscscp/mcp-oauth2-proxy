@@ -1,0 +1,46 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/sirupsen/logrus"
+)
+
+func baseURL(r *http.Request) string {
+	return fmt.Sprintf("https://%s", r.Host)
+}
+
+func callbackURL(r *http.Request) string {
+	return baseURL(r) + pathCallback
+}
+
+func authorizationCode(r *http.Request) string {
+	return r.URL.Query().Get(queryParamAuthorizationCode)
+}
+
+func state(r *http.Request) string {
+	return r.URL.Query().Get(queryParamState)
+}
+
+func bearerToken(r *http.Request) string {
+	return strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+}
+
+func respondWWWAuthenticate(w http.ResponseWriter, r *http.Request) {
+	resourceMetadata := fmt.Sprintf("%s%s", baseURL(r), pathOAuthProtectedResource)
+	wwwAuthenticate := fmt.Sprintf(`Bearer realm="mcp-oauth2-proxy", resource_metadata="%s"`, resourceMetadata)
+	w.Header().Set("WWW-Authenticate", wwwAuthenticate)
+	const status = http.StatusUnauthorized
+	http.Error(w, http.StatusText(status), status)
+}
+
+func respondJSON(w http.ResponseWriter, r *http.Request, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		logrus.WithError(err).Error("failed to write response")
+	}
+}

@@ -1,0 +1,48 @@
+package main
+
+import (
+	"fmt"
+	"net/http"
+)
+
+const (
+	stateCookieName   = "csrf-state"
+	stateCookieMaxAge = 60 // 1 minute
+)
+
+func setState(w http.ResponseWriter, r *http.Request, state string) {
+	c := &http.Cookie{
+		Name:     stateCookieName,
+		Value:    state,
+		Path:     pathCallback,
+		MaxAge:   stateCookieMaxAge,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	}
+	http.SetCookie(w, c)
+}
+
+func getAndDeleteStateAndCheckCSRF(w http.ResponseWriter, r *http.Request) (string, error) {
+	// Get state.
+	c, err := r.Cookie(stateCookieName)
+	if err != nil {
+		return "", fmt.Errorf("authentication expired")
+	}
+
+	// Delete state.
+	http.SetCookie(w, &http.Cookie{
+		Name:   stateCookieName,
+		Path:   pathCallback,
+		MaxAge: -1,
+	})
+
+	// Check CSRF token.
+	cookieState := c.Value
+	queryState := state(r)
+	if cookieState != queryState {
+		return "", fmt.Errorf("CSRF token mismatch")
+	}
+
+	return cookieState, nil
+}
