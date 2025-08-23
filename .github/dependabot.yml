@@ -1,0 +1,19 @@
+version: 2
+multi-ecosystem-groups:
+  project:
+    schedule:
+      interval: weekly
+updates:
+- package-ecosystem: gomod
+  directory: /
+  patterns: ["*"]
+  multi-ecosystem-group: project
+- package-ecosystem: docker
+  directory: /
+  patterns: ["*"]
+  multi-ecosystem-group: project
+- package-ecosystem: github-actions
+  directories:
+  - .github/workflows
+  patterns: ["*"]
+  multi-ecosystem-group: project
