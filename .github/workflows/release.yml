@@ -59,7 +59,6 @@ jobs:
         set -euo pipefail
 
         sed -i "s/CI_VERSION/${semver}/g" charts/mcp-oauth2-proxy/Chart.yaml
-        helm lint charts/mcp-oauth2-proxy
         helm package charts/mcp-oauth2-proxy
         helm push mcp-oauth2-proxy-${semver}.tgz oci://${registry} |& grep Digest: | awk '{print $NF}' > digest.txt
         cosign sign --yes ${registry}/mcp-oauth2-proxy@$(cat digest.txt)

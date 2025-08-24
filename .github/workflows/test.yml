@@ -24,6 +24,11 @@ jobs:
         fi
     - run: make test
     - run: make docker-build
+    - name: Helm lint
+      run: |
+        sed -i "s/CI_VERSION/${semver}/g" charts/mcp-oauth2-proxy/Chart.yaml
+        helm lint charts/mcp-oauth2-proxy
+        helm package charts/mcp-oauth2-proxy
     - uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24 # v5.4.3
       with:
         use_oidc: true
