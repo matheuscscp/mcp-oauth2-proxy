@@ -8,9 +8,9 @@ const (
 	queryParamRedirectURI         = "redirect_uri"
 	queryParamState               = "state"
 
-	authorizationServerAuthMethod          = "none"
-	authorizationServerCodeChallengeMethod = "S256"
-	authorizationServerGrantType           = "authorization_code"
-	authorizationServerResponseType        = "code"
-	authorizationServerResponseMode        = "query"
+	authorizationServerCodeChallengeMethod     = "S256"
+	authorizationServerGrantType               = "authorization_code"
+	authorizationServerResponseMode            = "query"
+	authorizationServerResponseType            = "code"
+	authorizationServerTokenEndpointAuthMethod = "none"
 )

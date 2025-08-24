@@ -214,7 +214,7 @@ func TestOAuthAuthorizationServer(t *testing.T) {
 	g.Expect(response["token_endpoint"]).To(Equal("https://example.com" + pathToken))
 	g.Expect(response["registration_endpoint"]).To(Equal("https://example.com" + pathRegister))
 	g.Expect(response["scopes_supported"]).To(Equal([]any{"openid", "profile"}))
-	g.Expect(response["token_endpoint_auth_methods_supported"]).To(Equal([]any{authorizationServerAuthMethod}))
+	g.Expect(response["token_endpoint_auth_methods_supported"]).To(Equal([]any{authorizationServerTokenEndpointAuthMethod}))
 }
 
 func TestRegister(t *testing.T) {
@@ -266,7 +266,7 @@ func TestRegister(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 
 				g.Expect(response["client_id"]).To(Equal("test-client-id"))
-				g.Expect(response["token_endpoint_auth_method"]).To(Equal(authorizationServerAuthMethod))
+				g.Expect(response["token_endpoint_auth_method"]).To(Equal(authorizationServerTokenEndpointAuthMethod))
 				g.Expect(response["redirect_uris"]).To(Equal([]any{"https://example.com/callback"}))
 			}
 		})

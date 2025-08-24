@@ -59,11 +59,11 @@ func newAPI(p provider, conf *config, sessionStore sessionStore) http.Handler {
 			"token_endpoint":                        fmt.Sprintf("%s%s", baseURL(r), pathToken),
 			"registration_endpoint":                 fmt.Sprintf("%s%s", baseURL(r), pathRegister),
 			"scopes_supported":                      p.supportedScopes(),
-			"token_endpoint_auth_methods_supported": []string{authorizationServerAuthMethod},
-			"response_types_supported":              []string{authorizationServerResponseType},
-			"response_modes_supported":              []string{authorizationServerResponseMode},
-			"grant_types_supported":                 []string{authorizationServerGrantType},
 			"code_challenge_methods_supported":      []string{authorizationServerCodeChallengeMethod},
+			"grant_types_supported":                 []string{authorizationServerGrantType},
+			"response_modes_supported":              []string{authorizationServerResponseMode},
+			"response_types_supported":              []string{authorizationServerResponseType},
+			"token_endpoint_auth_methods_supported": []string{authorizationServerTokenEndpointAuthMethod},
 		})
 	})
 
@@ -81,7 +81,7 @@ func newAPI(p provider, conf *config, sessionStore sessionStore) http.Handler {
 		}
 		respondJSON(w, http.StatusCreated, map[string]any{
 			"client_id":                  conf.Provider.ClientID,
-			"token_endpoint_auth_method": authorizationServerAuthMethod,
+			"token_endpoint_auth_method": authorizationServerTokenEndpointAuthMethod,
 			"redirect_uris":              redirectURIs,
 		})
 	})
@@ -181,9 +181,7 @@ func newAPI(p provider, conf *config, sessionStore sessionStore) http.Handler {
 			return
 		}
 
-		codeChallenge := tx.Get(queryParamCodeChallenge)
-		codeVerifier := r.FormValue(queryParamCodeVerifier)
-		if codeChallenge != pkceS256Challenge(codeVerifier) {
+		if tx.Get(queryParamCodeChallenge) != pkceS256Challenge(r.FormValue(queryParamCodeVerifier)) {
 			http.Error(w, "PKCE failed", http.StatusBadRequest)
 			return
 		}
