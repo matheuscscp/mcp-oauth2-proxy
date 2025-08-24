@@ -11,7 +11,7 @@ jobs:
       digest: ${{ steps.build-push.outputs.digest }}
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # for release
       packages: write # for pushing
       id-token: write # for signing
     steps:
@@ -52,7 +52,7 @@ jobs:
         repo: ${{ steps.repo.outputs.repo }}
         digest: ${{ steps.build-push.outputs.digest }}
 
-    - name: Release chart
+    - name: Release Helm Chart
       env:
         registry: ghcr.io/${{ github.repository }}/charts
       run: |
@@ -63,6 +63,19 @@ jobs:
         helm package charts/mcp-oauth2-proxy
         helm push mcp-oauth2-proxy-${semver}.tgz oci://${registry} |& grep Digest: | awk '{print $NF}' > digest.txt
         cosign sign --yes ${registry}/mcp-oauth2-proxy@$(cat digest.txt)
+
+    - name: Create GitHub Release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        CONTAINER_DIGEST: ${{ steps.build-push.outputs.digest }}
+      run: |
+        echo $CONTAINER_DIGEST > container-digest.txt
+        mv digest.txt chart-digest.txt
+        gh release create ${git_tag} \
+          container-digest.txt \
+          chart-digest.txt \
+          --generate-notes \
+          --latest
 
   slsa:
     needs: [release]
