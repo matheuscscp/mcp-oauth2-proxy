@@ -6,7 +6,7 @@ import (
 	"encoding/base64"
 )
 
-func pkceVerifier() (string, error) {
+var pkceVerifier = func() (string, error) {
 	// RFC 7636: 43..128 chars from ALPHA / DIGIT / "-" / "." / "_" / "~"
 	// https://datatracker.ietf.org/doc/html/rfc7636#section-4.1
 	const allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
