@@ -208,8 +208,14 @@ func main() {
 		handler = handleCORS(handler)
 	}
 	s := &http.Server{
-		Addr:    addr,
-		Handler: handler,
+		Addr: addr,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/readyz", "/healthz":
+			default:
+				handler.ServeHTTP(w, r)
+			}
+		}),
 	}
 
 	go func() {
