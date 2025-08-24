@@ -1,0 +1,6 @@
+apiVersion: v2
+name: mcp-oauth2-proxy
+description: A Helm chart for Kubernetes to deploy mcp-oauth2-proxy.
+type: application
+version: CI_VERSION
+appVersion: "CI_VERSION"
