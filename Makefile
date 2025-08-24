@@ -6,9 +6,20 @@ PLATFORM := linux/amd64
 run:
 	MCP_OAUTH2_PROXY_CONFIG=config.yaml go run .
 
+.PHONY: tidy
+tidy:
+	go mod tidy
+
+.PHONY: test
+test:
+	go test -v -race -coverprofile=coverage.out ./...
+
 .PHONY: docker-build
 docker-build:
 	docker buildx build \
-		--push \
 		--platform=$(PLATFORM) \
 		-t $(IMG) .
+
+.PHONY: docker-push
+docker-push:
+	docker push $(IMG)

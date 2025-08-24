@@ -39,7 +39,7 @@ func main() {
 	signal.Notify(signalReceived, os.Interrupt, syscall.SIGTERM)
 
 	p, conf := getProviderAndConfig()
-	api := newAPI(p, conf, newSessionStore())
+	api := newAPI(p, conf, newMemorySessionStore())
 
 	addr := conf.Server.Addr
 	if addr == "" {

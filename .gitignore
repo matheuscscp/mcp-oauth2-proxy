@@ -1,1 +1,6 @@
 config.yaml
+
+# Coverage files
+coverage.out
+coverage.html
+coverage_*.out

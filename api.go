@@ -22,7 +22,7 @@ const (
 	pathToken                    = "/token"
 )
 
-func newAPI(p provider, conf *config, sessionStore *sessionStore) http.Handler {
+func newAPI(p provider, conf *config, sessionStore sessionStore) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc(pathAuthenticate, func(w http.ResponseWriter, r *http.Request) {

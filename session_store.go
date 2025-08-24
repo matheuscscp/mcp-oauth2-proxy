@@ -13,7 +13,12 @@ const (
 	sessionStoreTimeout = stateCookieMaxAge * time.Second
 )
 
-type sessionStore struct {
+type sessionStore interface {
+	store(tx url.Values, tokens any) (string, error)
+	retrieve(key string) (url.Values, any, bool)
+}
+
+type memorySessionStore struct {
 	mu sync.Mutex
 	m  map[string]*session
 }
@@ -24,15 +29,15 @@ type session struct {
 	expiresAt time.Time
 }
 
-func newSessionStore() *sessionStore {
-	return &sessionStore{
+func newMemorySessionStore() *memorySessionStore {
+	return &memorySessionStore{
 		m: make(map[string]*session),
 	}
 }
 
-func (t *sessionStore) store(tx url.Values, tokens any) (string, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+func (m *memorySessionStore) store(tx url.Values, tokens any) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	for {
 		// The algorithm below for generating the key makes it usable both as
@@ -43,24 +48,24 @@ func (t *sessionStore) store(tx url.Values, tokens any) (string, error) {
 		}
 		key := base64.RawURLEncoding.EncodeToString(keyBytes)
 
-		if s, ok := t.m[key]; !ok || s.expiresAt.Before(time.Now()) {
+		if s, ok := m.m[key]; !ok || s.expiresAt.Before(time.Now()) {
 			expiresAt := time.Now().Add(sessionStoreTimeout)
-			t.m[key] = &session{tx, tokens, expiresAt}
+			m.m[key] = &session{tx, tokens, expiresAt}
 			return key, nil
 		}
 	}
 }
 
-func (t *sessionStore) retrieve(key string) (url.Values, any, bool) {
-	t.mu.Lock()
-	s, ok := t.m[key]
-	delete(t.m, key)
-	for k, v := range t.m {
+func (m *memorySessionStore) retrieve(key string) (url.Values, any, bool) {
+	m.mu.Lock()
+	s, ok := m.m[key]
+	delete(m.m, key)
+	for k, v := range m.m {
 		if v.expiresAt.Before(time.Now()) {
-			delete(t.m, k)
+			delete(m.m, k)
 		}
 	}
-	t.mu.Unlock()
+	m.mu.Unlock()
 
 	if !ok || s.expiresAt.Before(time.Now()) {
 		return nil, nil, false
