@@ -18,3 +18,19 @@
   echo "Visit http://127.0.0.1:8080 to use your application"
   kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:$CONTAINER_PORT
 {{- end }}
+
+{{- if .Values.podMonitor.enabled }}
+
+2. PodMonitor has been created for Prometheus monitoring:
+   Name: {{ include "mcp-oauth2-proxy.fullname" . }}
+   Namespace: {{ .Release.Namespace }}
+   Metrics Path: {{ .Values.podMonitor.path }}
+   Scrape Interval: {{ .Values.podMonitor.interval }}
+
+   To verify the PodMonitor is working:
+   kubectl get podmonitor --namespace {{ .Release.Namespace }} {{ include "mcp-oauth2-proxy.fullname" . }}
+
+   To check if metrics are being scraped (requires Prometheus access):
+   - Check the Prometheus targets page for your PodMonitor
+   - Query metrics with prefix matching your application name
+{{- end }}

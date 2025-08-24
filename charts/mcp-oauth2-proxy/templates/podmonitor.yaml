@@ -1,0 +1,51 @@
+{{- if .Values.podMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "mcp-oauth2-proxy.fullname" . }}
+  labels:
+    {{- include "mcp-oauth2-proxy.labels" . | nindent 4 }}
+    {{- with .Values.podMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.podMonitor.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "mcp-oauth2-proxy.selectorLabels" . | nindent 6 }}
+  podMetricsEndpoints:
+    - port: {{ .Values.podMonitor.port | default "http" }}
+      {{- with .Values.podMonitor.path }}
+      path: {{ . }}
+      {{- end }}
+      {{- with .Values.podMonitor.interval }}
+      interval: {{ . }}
+      {{- end }}
+      {{- with .Values.podMonitor.scrapeTimeout }}
+      scrapeTimeout: {{ . }}
+      {{- end }}
+      {{- with .Values.podMonitor.scheme }}
+      scheme: {{ . }}
+      {{- end }}
+      {{- with .Values.podMonitor.honorLabels }}
+      honorLabels: {{ . }}
+      {{- end }}
+      {{- with .Values.podMonitor.honorTimestamps }}
+      honorTimestamps: {{ . }}
+      {{- end }}
+      {{- with .Values.podMonitor.metricRelabelings }}
+      metricRelabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podMonitor.relabelings }}
+      relabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- with .Values.podMonitor.namespaceSelector }}
+  namespaceSelector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
