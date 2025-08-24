@@ -280,12 +280,36 @@ func TestAuthorize(t *testing.T) {
 		expectedStatus int
 		expectRedirect bool
 		expectError    bool
+		sessionStore   sessionStore
+		pkceError      bool
 	}{
 		{
 			name:           "unsupported code challenge method",
 			queryParams:    "code_challenge_method=plain",
 			expectedStatus: http.StatusBadRequest,
 			expectError:    true,
+		},
+		{
+			name:           "missing code_challenge_method",
+			queryParams:    "redirect_uri=https://example.com/callback&state=test-state",
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "empty code_challenge_method",
+			queryParams:    "code_challenge_method=&redirect_uri=https://example.com/callback&state=test-state",
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "session store error",
+			queryParams:    fmt.Sprintf("code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
+			expectedStatus: http.StatusInternalServerError,
+			sessionStore:   &mockSessionStore{sessionStore: newMemorySessionStore(), storeError: errors.New("session store failure")},
+		},
+		{
+			name:           "PKCE generation error",
+			queryParams:    fmt.Sprintf("code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
+			expectedStatus: http.StatusInternalServerError,
+			pkceError:      true,
 		},
 		{
 			name:           "valid authorize request",
@@ -299,9 +323,21 @@ func TestAuthorize(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
+			// Handle PKCE error override
+			if tt.pkceError {
+				originalPkceVerifier := pkceVerifier
+				defer func() { pkceVerifier = originalPkceVerifier }()
+				pkceVerifier = func() (string, error) {
+					return "", errors.New("PKCE generation failed")
+				}
+			}
+
 			mockProv := &mockProvider{}
 			conf := newTestConfig()
-			sessionStore := newMemorySessionStore()
+			sessionStore := tt.sessionStore
+			if sessionStore == nil {
+				sessionStore = newMemorySessionStore()
+			}
 
 			api := newAPI(mockProv, conf, sessionStore)
 
@@ -332,6 +368,9 @@ func TestCallback(t *testing.T) {
 		exchangeError  error
 		verifyError    error
 		expectedStatus int
+		sessionStore   sessionStore
+		csrfMismatch   bool
+		retrieveError  bool
 	}{
 		{
 			name:           "missing CSRF cookie",
@@ -348,10 +387,35 @@ func TestCallback(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
+			name:           "CSRF token mismatch",
+			setupSession:   true,
+			setCookie:      true,
+			queryParams:    "code=auth-code&state=different-state",
+			expectedStatus: http.StatusBadRequest,
+			csrfMismatch:   true,
+		},
+		{
+			name:           "session not found",
+			setupSession:   true,
+			setCookie:      true,
+			queryParams:    "code=auth-code&state=SESSION_KEY_PLACEHOLDER",
+			expectedStatus: http.StatusBadRequest,
+			retrieveError:  true,
+		},
+		{
+			name:           "session store error in callback",
+			setupSession:   true,
+			setCookie:      true,
+			queryParams:    "code=auth-code&state=SESSION_KEY_PLACEHOLDER",
+			tokens:         map[string]string{"access_token": "token"},
+			expectedStatus: http.StatusInternalServerError,
+			sessionStore:   &callCountingSessionStore{sessionStore: newMemorySessionStore(), callCount: 0, failAfter: 0},
+		},
+		{
 			name:           "token exchange failure",
 			setupSession:   true,
 			setCookie:      true,
-			queryParams:    "code=auth-code&state=test-state",
+			queryParams:    "code=auth-code&state=SESSION_KEY_PLACEHOLDER",
 			exchangeError:  errors.New("exchange failed"),
 			expectedStatus: http.StatusBadRequest,
 		},
@@ -359,7 +423,7 @@ func TestCallback(t *testing.T) {
 			name:           "token verification failure",
 			setupSession:   true,
 			setCookie:      true,
-			queryParams:    "code=auth-code&state=test-state",
+			queryParams:    "code=auth-code&state=SESSION_KEY_PLACEHOLDER",
 			verifyError:    errors.New("verify failed"),
 			expectedStatus: http.StatusBadRequest,
 		},
@@ -400,7 +464,7 @@ func TestCallback(t *testing.T) {
 						},
 					}
 				}
-			} else if tt.name == "successful callback" {
+			} else if tt.name == "successful callback" || tt.name == "session store error in callback" || tt.name == "token verification failure" {
 				// Use httptest server for successful token exchange
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
@@ -425,20 +489,55 @@ func TestCallback(t *testing.T) {
 			}
 
 			conf := newTestConfig()
-			sessionStore := newMemorySessionStore()
+			var baseStore sessionStore
+			sessionStore := tt.sessionStore
+
+			// Handle special case for session store error in callback
+			if tt.name == "session store error in callback" {
+				baseStore = newMemorySessionStore()
+				sessionStore = &callCountingSessionStore{
+					sessionStore: baseStore,
+					callCount:    0,
+					failAfter:    0, // Fail on first call from the counting store
+				}
+			} else {
+				if sessionStore == nil {
+					sessionStore = newMemorySessionStore()
+				}
+				baseStore = sessionStore
+			}
 
 			api := newAPI(mockProv, conf, sessionStore)
 
 			// For successful callback test, we need the session key to match the cookie value
 			var sessionKey string
-			if tt.setupSession {
+			if tt.name == "session store error in callback" {
+				// For session store error test, we need to set up session in base store first
 				tx := url.Values{}
 				tx.Set(queryParamCodeVerifier, "test-verifier")
 				tx.Set(queryParamRedirectURI, "https://example.com/callback")
 				tx.Set(queryParamState, "test-state")
 				var err error
+				sessionKey, err = baseStore.store(tx, nil)
+				g.Expect(err).ToNot(HaveOccurred())
+			} else if tt.setupSession {
+				tx := url.Values{}
+				tx.Set(queryParamCodeVerifier, "test-verifier")
+				tx.Set(queryParamRedirectURI, "https://example.com/callback")
+				if tt.csrfMismatch {
+					tx.Set(queryParamState, "test-state")
+				} else {
+					tx.Set(queryParamState, "test-state")
+				}
+				var err error
 				sessionKey, err = sessionStore.store(tx, nil)
 				g.Expect(err).ToNot(HaveOccurred())
+
+				// For session not found test, replace session store after setting up session
+				if tt.retrieveError {
+					sessionStore = &mockSessionStore{sessionStore: sessionStore, retrieveError: true}
+					api = newAPI(mockProv, conf, sessionStore)
+				}
 			} else {
 				sessionKey = "invalid-state"
 			}
@@ -517,8 +616,8 @@ func TestToken(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 
 				// Replace the code in form data
-				if tt.formData == "code=valid-code&code_verifier=test-verifier" {
-					tt.formData = fmt.Sprintf("code=%s&code_verifier=test-verifier", authzCode)
+				if strings.Contains(tt.formData, "code=valid-code") {
+					tt.formData = strings.Replace(tt.formData, "valid-code", authzCode, 1)
 				}
 			}
 
@@ -538,326 +637,4 @@ func TestToken(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestCallbackCSRFMismatch(t *testing.T) {
-	g := NewWithT(t)
-
-	mockProv := &mockProvider{}
-	conf := newTestConfig()
-	sessionStore := newMemorySessionStore()
-
-	api := newAPI(mockProv, conf, sessionStore)
-
-	// Set up session
-	tx := url.Values{}
-	tx.Set(queryParamCodeVerifier, "test-verifier")
-	tx.Set(queryParamRedirectURI, "https://example.com/callback")
-	tx.Set(queryParamState, "test-state")
-	sessionKey, err := sessionStore.store(tx, nil)
-	g.Expect(err).ToNot(HaveOccurred())
-
-	// Use different state in query than in cookie
-	req := httptest.NewRequest(http.MethodGet, pathCallback+"?code=auth-code&state=different-state", nil)
-	req.Host = "example.com"
-	req.Header.Set("Cookie", fmt.Sprintf("%s=%s", stateCookieName, sessionKey))
-
-	rec := httptest.NewRecorder()
-	api.ServeHTTP(rec, req)
-
-	g.Expect(rec.Code).To(Equal(http.StatusBadRequest))
-}
-
-func TestAuthorizeMissingParameters(t *testing.T) {
-	tests := []struct {
-		name           string
-		queryParams    string
-		expectedStatus int
-	}{
-		{
-			name:           "missing code_challenge_method",
-			queryParams:    "redirect_uri=https://example.com/callback&state=test-state",
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name:           "empty code_challenge_method",
-			queryParams:    "code_challenge_method=&redirect_uri=https://example.com/callback&state=test-state",
-			expectedStatus: http.StatusBadRequest,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-
-			mockProv := &mockProvider{}
-			conf := newTestConfig()
-			sessionStore := newMemorySessionStore()
-
-			api := newAPI(mockProv, conf, sessionStore)
-
-			req := httptest.NewRequest(http.MethodGet, pathAuthorize+"?"+tt.queryParams, nil)
-			req.Host = "example.com"
-			rec := httptest.NewRecorder()
-
-			api.ServeHTTP(rec, req)
-
-			g.Expect(rec.Code).To(Equal(tt.expectedStatus))
-		})
-	}
-}
-
-func TestAuthorizeSessionStoreError(t *testing.T) {
-	g := NewWithT(t)
-
-	mockProv := &mockProvider{}
-	conf := newTestConfig()
-	sessionStore := &mockSessionStore{
-		sessionStore: newMemorySessionStore(),
-		storeError:   errors.New("session store failure"),
-	}
-
-	api := newAPI(mockProv, conf, sessionStore)
-
-	queryParams := fmt.Sprintf("code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod)
-	req := httptest.NewRequest(http.MethodGet, pathAuthorize+"?"+queryParams, nil)
-	req.Host = "example.com"
-	rec := httptest.NewRecorder()
-
-	api.ServeHTTP(rec, req)
-
-	g.Expect(rec.Code).To(Equal(http.StatusInternalServerError))
-}
-
-func TestCallbackSessionStoreError(t *testing.T) {
-	g := NewWithT(t)
-
-	// Create a session store that succeeds on first call but fails on second
-	baseStore := newMemorySessionStore()
-	sessionStore := &callCountingSessionStore{
-		sessionStore: baseStore,
-		callCount:    0,
-		failAfter:    0, // Fail on first call from the counting store
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]any{
-			"access_token": "test-access-token",
-			"token_type":   "Bearer",
-		})
-	}))
-	defer server.Close()
-
-	mockProv := &mockProvider{
-		oauth2ConfigFunc: func(r *http.Request) *oauth2.Config {
-			return &oauth2.Config{
-				ClientID:    "test-client-id",
-				RedirectURL: callbackURL(r),
-				Endpoint: oauth2.Endpoint{
-					AuthURL:  "https://example.com/auth",
-					TokenURL: server.URL,
-				},
-			}
-		},
-		verifyAndRepackExchangedTokensRes: map[string]string{"access_token": "token"},
-	}
-
-	// Set up initial session using base store directly
-	tx := url.Values{}
-	tx.Set(queryParamCodeVerifier, "test-verifier")
-	tx.Set(queryParamRedirectURI, "https://example.com/callback")
-	tx.Set(queryParamState, "test-state")
-	sessionKey, err := baseStore.store(tx, nil)
-	g.Expect(err).ToNot(HaveOccurred())
-
-	conf := newTestConfig()
-	api := newAPI(mockProv, conf, sessionStore)
-
-	req := httptest.NewRequest(http.MethodGet, pathCallback+"?code=auth-code&state="+sessionKey, nil)
-	req.Host = "example.com"
-	req.Header.Set("Cookie", fmt.Sprintf("%s=%s", stateCookieName, sessionKey))
-
-	rec := httptest.NewRecorder()
-	api.ServeHTTP(rec, req)
-
-	g.Expect(rec.Code).To(Equal(http.StatusInternalServerError))
-}
-
-func TestCallbackSessionExpired(t *testing.T) {
-	g := NewWithT(t)
-
-	mockProv := &mockProvider{}
-	conf := newTestConfig()
-	sessionStore := &mockSessionStore{
-		sessionStore:  newMemorySessionStore(),
-		retrieveError: true, // Simulate session not found
-	}
-
-	api := newAPI(mockProv, conf, sessionStore)
-
-	req := httptest.NewRequest(http.MethodGet, pathCallback+"?code=auth-code&state=non-existent-state", nil)
-	req.Host = "example.com"
-	req.Header.Set("Cookie", fmt.Sprintf("%s=%s", stateCookieName, "non-existent-state"))
-
-	rec := httptest.NewRecorder()
-	api.ServeHTTP(rec, req)
-
-	g.Expect(rec.Code).To(Equal(http.StatusBadRequest))
-}
-
-func TestCallbackTokenVerificationError(t *testing.T) {
-	g := NewWithT(t)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]any{
-			"access_token": "test-access-token",
-			"token_type":   "Bearer",
-		})
-	}))
-	defer server.Close()
-
-	mockProv := &mockProvider{
-		oauth2ConfigFunc: func(r *http.Request) *oauth2.Config {
-			return &oauth2.Config{
-				ClientID:    "test-client-id",
-				RedirectURL: callbackURL(r),
-				Endpoint: oauth2.Endpoint{
-					AuthURL:  "https://example.com/auth",
-					TokenURL: server.URL,
-				},
-			}
-		},
-		verifyAndRepackExchangedTokensErr: errors.New("token verification failed"),
-	}
-
-	conf := newTestConfig()
-	sessionStore := newMemorySessionStore()
-
-	// Set up initial session
-	tx := url.Values{}
-	tx.Set(queryParamCodeVerifier, "test-verifier")
-	tx.Set(queryParamRedirectURI, "https://example.com/callback")
-	tx.Set(queryParamState, "test-state")
-	sessionKey, err := sessionStore.store(tx, nil)
-	g.Expect(err).ToNot(HaveOccurred())
-
-	api := newAPI(mockProv, conf, sessionStore)
-
-	req := httptest.NewRequest(http.MethodGet, pathCallback+"?code=auth-code&state="+sessionKey, nil)
-	req.Host = "example.com"
-	req.Header.Set("Cookie", fmt.Sprintf("%s=%s", stateCookieName, sessionKey))
-
-	rec := httptest.NewRecorder()
-	api.ServeHTTP(rec, req)
-
-	g.Expect(rec.Code).To(Equal(http.StatusBadRequest))
-}
-
-func TestTokenPKCEVerificationFailure(t *testing.T) {
-	g := NewWithT(t)
-
-	mockProv := &mockProvider{}
-	conf := newTestConfig()
-	sessionStore := newMemorySessionStore()
-
-	api := newAPI(mockProv, conf, sessionStore)
-
-	// Set up session with a specific code challenge
-	tx := url.Values{}
-	correctVerifier := "test-verifier"
-	codeChallenge := pkceS256Challenge(correctVerifier)
-	tx.Set(queryParamCodeChallenge, codeChallenge)
-
-	tokens := map[string]string{"access_token": "test-token"}
-	authzCode, err := sessionStore.store(tx, tokens)
-	g.Expect(err).ToNot(HaveOccurred())
-
-	// Use wrong verifier in the token request
-	wrongVerifier := "wrong-verifier"
-	formData := fmt.Sprintf("code=%s&code_verifier=%s", authzCode, wrongVerifier)
-
-	req := httptest.NewRequest(http.MethodPost, pathToken, strings.NewReader(formData))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	rec := httptest.NewRecorder()
-
-	api.ServeHTTP(rec, req)
-
-	g.Expect(rec.Code).To(Equal(http.StatusBadRequest))
-}
-
-func TestCallbackTokenExchangeError(t *testing.T) {
-	g := NewWithT(t)
-
-	// Create a server that returns an error for token exchange
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "token exchange failed", http.StatusBadRequest)
-	}))
-	defer server.Close()
-
-	mockProv := &mockProvider{
-		oauth2ConfigFunc: func(r *http.Request) *oauth2.Config {
-			return &oauth2.Config{
-				ClientID:    "test-client-id",
-				RedirectURL: callbackURL(r),
-				Endpoint: oauth2.Endpoint{
-					AuthURL:  "https://example.com/auth",
-					TokenURL: server.URL, // Use the failing server
-				},
-			}
-		},
-	}
-
-	conf := newTestConfig()
-	sessionStore := newMemorySessionStore()
-
-	// Set up initial session
-	tx := url.Values{}
-	tx.Set(queryParamCodeVerifier, "test-verifier")
-	tx.Set(queryParamRedirectURI, "https://example.com/callback")
-	tx.Set(queryParamState, "test-state")
-	sessionKey, err := sessionStore.store(tx, nil)
-	g.Expect(err).ToNot(HaveOccurred())
-
-	api := newAPI(mockProv, conf, sessionStore)
-
-	req := httptest.NewRequest(http.MethodGet, pathCallback+"?code=auth-code&state="+sessionKey, nil)
-	req.Host = "example.com"
-	req.Header.Set("Cookie", fmt.Sprintf("%s=%s", stateCookieName, sessionKey))
-
-	rec := httptest.NewRecorder()
-	api.ServeHTTP(rec, req)
-
-	g.Expect(rec.Code).To(Equal(http.StatusBadRequest))
-}
-
-func TestAuthorizePKCEGenerationError(t *testing.T) {
-	g := NewWithT(t)
-
-	// Save original function and restore after test
-	originalPkceVerifier := pkceVerifier
-	defer func() { pkceVerifier = originalPkceVerifier }()
-
-	// Override pkceVerifier to return an error
-	pkceVerifier = func() (string, error) {
-		return "", errors.New("PKCE generation failed")
-	}
-
-	mockProv := &mockProvider{}
-	conf := newTestConfig()
-	sessionStore := newMemorySessionStore()
-
-	api := newAPI(mockProv, conf, sessionStore)
-
-	queryParams := fmt.Sprintf("code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod)
-	req := httptest.NewRequest(http.MethodGet, pathAuthorize+"?"+queryParams, nil)
-	req.Host = "example.com"
-	rec := httptest.NewRecorder()
-
-	api.ServeHTTP(rec, req)
-
-	g.Expect(rec.Code).To(Equal(http.StatusInternalServerError))
 }
