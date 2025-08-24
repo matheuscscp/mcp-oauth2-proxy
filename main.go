@@ -16,6 +16,12 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+func init() {
+	logrus.SetFormatter(&logrus.JSONFormatter{
+		TimestampFormat: time.RFC3339Nano,
+	})
+}
+
 func getProviderAndConfig() (provider, *config) {
 	conf, err := readConfig()
 	if err != nil {
@@ -29,10 +35,6 @@ func getProviderAndConfig() (provider, *config) {
 }
 
 func main() {
-	logrus.SetFormatter(&logrus.JSONFormatter{
-		TimestampFormat: time.RFC3339Nano,
-	})
-
 	signalReceived := make(chan os.Signal, 2)
 	signal.Notify(signalReceived, os.Interrupt, syscall.SIGTERM)
 
