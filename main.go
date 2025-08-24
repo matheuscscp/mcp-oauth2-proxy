@@ -50,12 +50,12 @@ func main() {
 		}
 
 		if err := p.verifyBearerToken(r.Context(), token); err != nil {
-			logrus.WithError(err).Error("failed to verify bearer token")
+			logrus.WithError(err).Debug("failed to verify bearer token")
 			respondWWWAuthenticate(w, r)
 			return
 		}
 
-		logrus.WithField("host", r.Host).Info("request authenticated")
+		logrus.WithField("host", r.Host).Debug("request authenticated")
 	})
 
 	mux.HandleFunc(pathOAuthProtectedResource, func(w http.ResponseWriter, r *http.Request) {
