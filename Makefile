@@ -13,6 +13,7 @@ tidy:
 .PHONY: test
 test:
 	go test -v -race -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out -o coverage.html
 
 .PHONY: docker-build
 docker-build:
