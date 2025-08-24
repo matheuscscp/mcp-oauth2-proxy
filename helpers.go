@@ -37,7 +37,7 @@ func respondWWWAuthenticate(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, http.StatusText(status), status)
 }
 
-func respondJSON(w http.ResponseWriter, r *http.Request, status int, payload any) {
+func respondJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(payload); err != nil {

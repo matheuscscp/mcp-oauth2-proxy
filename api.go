@@ -44,7 +44,7 @@ func newAPI(p provider, conf *config, sessionStore *sessionStore) http.Handler {
 	})
 
 	mux.HandleFunc(pathOAuthProtectedResource, func(w http.ResponseWriter, r *http.Request) {
-		respondJSON(w, r, http.StatusOK, map[string]any{
+		respondJSON(w, http.StatusOK, map[string]any{
 			"authorization_servers": []map[string]any{{
 				"issuer":                 baseURL(r),
 				"authorization_endpoint": fmt.Sprintf("%s%s", baseURL(r), pathAuthorize),
@@ -53,7 +53,7 @@ func newAPI(p provider, conf *config, sessionStore *sessionStore) http.Handler {
 	})
 
 	mux.HandleFunc(pathOAuthAuthorizationServer, func(w http.ResponseWriter, r *http.Request) {
-		respondJSON(w, r, http.StatusOK, map[string]any{
+		respondJSON(w, http.StatusOK, map[string]any{
 			"issuer":                                baseURL(r),
 			"authorization_endpoint":                fmt.Sprintf("%s%s", baseURL(r), pathAuthorize),
 			"token_endpoint":                        fmt.Sprintf("%s%s", baseURL(r), pathToken),
@@ -79,7 +79,7 @@ func newAPI(p provider, conf *config, sessionStore *sessionStore) http.Handler {
 			http.Error(w, "Missing redirect_uris", http.StatusBadRequest)
 			return
 		}
-		respondJSON(w, r, http.StatusCreated, map[string]any{
+		respondJSON(w, http.StatusCreated, map[string]any{
 			"client_id":                  conf.Provider.ClientID,
 			"token_endpoint_auth_method": authorizationServerAuthMethod,
 			"redirect_uris":              redirectURIs,
@@ -110,7 +110,7 @@ func newAPI(p provider, conf *config, sessionStore *sessionStore) http.Handler {
 			http.Error(w, "Failed to generate state", http.StatusInternalServerError)
 			return
 		}
-		setState(w, r, state)
+		setState(w, state)
 
 		url := p.oauth2Config(r).AuthCodeURL(state,
 			oauth2.SetAuthURLParam(queryParamCodeChallenge, codeChallenge),
@@ -188,7 +188,7 @@ func newAPI(p provider, conf *config, sessionStore *sessionStore) http.Handler {
 			return
 		}
 
-		respondJSON(w, r, http.StatusOK, tokens)
+		respondJSON(w, http.StatusOK, tokens)
 	})
 
 	return mux

@@ -10,7 +10,7 @@ const (
 	stateCookieMaxAge = 60 // 1 minute
 )
 
-func setState(w http.ResponseWriter, r *http.Request, state string) {
+func setState(w http.ResponseWriter, state string) {
 	c := &http.Cookie{
 		Name:     stateCookieName,
 		Value:    state,
