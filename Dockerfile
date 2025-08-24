@@ -5,7 +5,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY main.go ./
+COPY ./*.go ./
 
 # CGO_ENABLED=0 to build a statically-linked binary
 # -ldflags '-w -s' to strip debugging information for smaller size
