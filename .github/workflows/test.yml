@@ -13,9 +13,12 @@ jobs:
     steps:
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
     - run: make tidy
-    - name: Fail if working tree is dirty
+    - name: Check if working tree is dirty
       run: |
-        git diff --exit-code || (echo "Working tree is dirty" && exit 1)
-        git ls-files --others --exclude-standard | grep . && (echo "New untracked files were created" && exit 1)
+        if [[ $(git diff --stat) != '' ]]; then
+          git --no-pager diff
+          echo 'run make tidy and commit changes'
+          exit 1
+        fi
     - run: make test
     - run: make docker-build
