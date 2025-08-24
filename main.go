@@ -43,6 +43,8 @@ func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc(pathAuthenticate, func(w http.ResponseWriter, r *http.Request) {
+		l := fromRequest(r)
+
 		token := bearerToken(r)
 		if token == "" {
 			respondWWWAuthenticate(w, r)
@@ -50,12 +52,12 @@ func main() {
 		}
 
 		if err := p.verifyBearerToken(r.Context(), token); err != nil {
-			logrus.WithError(err).Debug("failed to verify bearer token")
+			l.WithError(err).Debug("failed to verify bearer token")
 			respondWWWAuthenticate(w, r)
 			return
 		}
 
-		logrus.WithField("host", r.Host).Debug("request authenticated")
+		l.Debug("request authenticated")
 	})
 
 	mux.HandleFunc(pathOAuthProtectedResource, func(w http.ResponseWriter, r *http.Request) {
@@ -85,6 +87,7 @@ func main() {
 	mux.HandleFunc(pathRegister, func(w http.ResponseWriter, r *http.Request) {
 		var m map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
+			fromRequest(r).WithError(err).Error("failed to parse request body as JSON")
 			http.Error(w, "Failed to parse request body as JSON", http.StatusBadRequest)
 			return
 		}
@@ -101,6 +104,8 @@ func main() {
 	})
 
 	mux.HandleFunc(pathAuthorize, func(w http.ResponseWriter, r *http.Request) {
+		l := fromRequest(r)
+
 		if r.URL.Query().Get(queryParamCodeChallengeMethod) != authorizationServerCodeChallengeMethod {
 			http.Error(w, "Unsupported code_challenge_method", http.StatusBadRequest)
 			return
@@ -108,7 +113,7 @@ func main() {
 
 		codeVerifier, err := pkceVerifier()
 		if err != nil {
-			logrus.WithError(err).Error("failed to generate code verifier")
+			l.WithError(err).Error("failed to generate code verifier")
 			http.Error(w, "Failed to generate code verifier", http.StatusInternalServerError)
 			return
 		}
@@ -118,7 +123,7 @@ func main() {
 		tx.Set(queryParamCodeVerifier, codeVerifier)
 		state, err := sessionStore.store(tx, nil)
 		if err != nil {
-			logrus.WithError(err).Error("failed to generate state")
+			l.WithError(err).Error("failed to generate state")
 			http.Error(w, "Failed to generate state", http.StatusInternalServerError)
 			return
 		}
@@ -131,9 +136,11 @@ func main() {
 	})
 
 	mux.HandleFunc(pathCallback, func(w http.ResponseWriter, r *http.Request) {
+		l := fromRequest(r)
+
 		state, err := getAndDeleteStateAndCheckCSRF(w, r)
 		if err != nil {
-			logrus.WithError(err).Error("failed to check CSRF")
+			l.WithError(err).Error("failed to check CSRF")
 			http.Error(w, "Failed to check CSRF", http.StatusBadRequest)
 			return
 		}
@@ -147,21 +154,21 @@ func main() {
 		oauth2Token, err := p.oauth2Config(r).Exchange(r.Context(), authorizationCode(r),
 			oauth2.SetAuthURLParam(queryParamCodeVerifier, tx.Get(queryParamCodeVerifier)))
 		if err != nil {
-			logrus.WithError(err).Error("failed to exchange authorization code for tokens")
+			l.WithError(err).Error("failed to exchange authorization code for tokens")
 			http.Error(w, "Failed to exchange authorization code for tokens", http.StatusBadRequest)
 			return
 		}
 
 		tokens, err := p.verifyAndRepackExchangedTokens(r.Context(), oauth2Token)
 		if err != nil {
-			logrus.WithError(err).Error("failed to verify user")
+			l.WithError(err).Error("failed to verify user")
 			http.Error(w, "Failed to verify user", http.StatusBadRequest)
 			return
 		}
 
 		authzCode, err := sessionStore.store(tx, tokens)
 		if err != nil {
-			logrus.WithError(err).Error("failed to store tokens with authorization code")
+			l.WithError(err).Error("failed to store tokens with authorization code")
 			http.Error(w, "Failed to store tokens with authorization code", http.StatusInternalServerError)
 			return
 		}
@@ -176,8 +183,10 @@ func main() {
 	})
 
 	mux.HandleFunc(pathToken, func(w http.ResponseWriter, r *http.Request) {
+		l := fromRequest(r)
+
 		if err := r.ParseForm(); err != nil {
-			logrus.WithError(err).Error("failed to parse form")
+			l.WithError(err).Error("failed to parse form")
 			http.Error(w, "Failed to parse form", http.StatusBadRequest)
 			return
 		}
@@ -213,6 +222,7 @@ func main() {
 			switch r.URL.Path {
 			case "/readyz", "/healthz":
 			default:
+				r = intoRequest(r, logrus.WithField("host", r.Host))
 				handler.ServeHTTP(w, r)
 			}
 		}),
