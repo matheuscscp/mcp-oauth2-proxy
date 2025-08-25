@@ -38,8 +38,9 @@ func main() {
 	signalReceived := make(chan os.Signal, 2)
 	signal.Notify(signalReceived, os.Interrupt, syscall.SIGTERM)
 
+	iss := newIssuer()
 	p, conf := getProviderAndConfig()
-	api := newAPI(p, &conf.Proxy, newMemorySessionStore())
+	api := newAPI(iss, p, &conf.Proxy, newMemorySessionStore(), time.Now)
 
 	addr := conf.Server.Addr
 	if addr == "" {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"golang.org/x/oauth2"
 )
@@ -12,6 +13,9 @@ import (
 const (
 	// Ping endpoint. Will respond WWW-Authenticate header if a valid bearer token is not provided.
 	pathAuthenticate = "/authenticate"
+
+	// Returned in the /authenticate response.
+	responseHeaderAccessToken = "X-Auth-Request-Access-Token"
 
 	// OAuth 2.0 Dynamic Client Registration Protocol-compliant endpoints.
 	pathOAuthProtectedResource   = "/.well-known/oauth-protected-resource"
@@ -22,25 +26,17 @@ const (
 	pathToken                    = "/token"
 )
 
-func newAPI(p provider, conf *proxyConfig, sessionStore sessionStore) http.Handler {
+func newAPI(ti *tokenIssuer, p provider, conf *proxyConfig, sessionStore sessionStore, nowFunc func() time.Time) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc(pathAuthenticate, func(w http.ResponseWriter, r *http.Request) {
-		l := fromRequest(r)
-
 		token := bearerToken(r)
-		if token == "" {
+		if !ti.verify(token, nowFunc()) {
 			respondWWWAuthenticate(w, r)
 			return
 		}
-
-		if err := p.verifyBearerToken(r.Context(), token); err != nil {
-			l.WithError(err).Debug("failed to verify bearer token")
-			respondWWWAuthenticate(w, r)
-			return
-		}
-
-		l.Debug("request authenticated")
+		w.Header().Set(responseHeaderAccessToken, token)
+		fromRequest(r).Debug("request authenticated")
 	})
 
 	mux.HandleFunc(pathOAuthProtectedResource, func(w http.ResponseWriter, r *http.Request) {
@@ -172,14 +168,35 @@ func newAPI(p provider, conf *proxyConfig, sessionStore sessionStore) http.Handl
 			return
 		}
 
-		tokens, err := p.verifyAndRepackExchangedTokens(r.Context(), oauth2Token)
+		_, err = p.verifyAndRepackExchangedTokens(r.Context(), oauth2Token)
 		if err != nil {
 			l.WithError(err).Error("failed to verify user")
 			http.Error(w, "Failed to verify user", http.StatusBadRequest)
 			return
 		}
 
-		s := &session{tx: tx, tokens: tokens}
+		// Issue an access token.
+		iss := baseURL(r)
+		sub := "<user>" // FIXME: use user from provider
+		aud := mcpOAuth2Proxy
+		now := nowFunc()
+		accessToken, exp, err := ti.issue(iss, sub, aud, now)
+		if err != nil {
+			l.WithError(err).Error("failed to issue access token")
+			http.Error(w, "Failed to issue access token", http.StatusInternalServerError)
+			return
+		}
+
+		// Store transaction outcome in the session.
+		s := &session{
+			tx: tx,
+			outcome: &oauth2.Token{
+				AccessToken: accessToken,
+				TokenType:   "Bearer",
+				Expiry:      exp,
+				ExpiresIn:   int64(exp.Sub(now).Milliseconds() / 1000),
+			},
+		}
 		authzCode, err := sessionStore.store(s)
 		if err != nil {
 			l.WithError(err).Error("failed to store tokens with authorization code")
@@ -187,6 +204,7 @@ func newAPI(p provider, conf *proxyConfig, sessionStore sessionStore) http.Handl
 			return
 		}
 
+		// Build redirect URL.
 		redirectURI := tx.clientParams.redirectURL
 		redirectParams := url.Values{}
 		redirectParams.Set(queryParamAuthorizationCode, authzCode)
@@ -218,7 +236,7 @@ func newAPI(p provider, conf *proxyConfig, sessionStore sessionStore) http.Handl
 			return
 		}
 
-		respondJSON(w, http.StatusOK, s.tokens)
+		respondJSON(w, http.StatusOK, s.outcome)
 	})
 
 	return mux

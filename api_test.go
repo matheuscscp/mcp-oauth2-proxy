@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,14 +12,15 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	. "github.com/onsi/gomega"
 	"golang.org/x/oauth2"
 )
 
 // mockProvider implements the provider interface for testing
 type mockProvider struct {
-	verifyBearerTokenError            error
 	oauth2ConfigFunc                  func(r *http.Request) *oauth2.Config
 	verifyAndRepackExchangedTokensRes any
 	verifyAndRepackExchangedTokensErr error
@@ -38,7 +41,8 @@ func (m *mockProvider) oauth2Config(r *http.Request) *oauth2.Config {
 }
 
 func (m *mockProvider) verifyBearerToken(ctx context.Context, bearerToken string) error {
-	return m.verifyBearerTokenError
+	// This method is no longer used by the main code but still required by interface
+	return nil
 }
 
 func (m *mockProvider) verifyAndRepackExchangedTokens(ctx context.Context, token *oauth2.Token) (any, error) {
@@ -132,6 +136,61 @@ func newTestTransaction() *transaction {
 	}
 }
 
+// mockPrivateKeySource implements the privateKeySource interface for testing
+type mockPrivateKeySource struct {
+	currentError  error
+	privateKey    jwk.Key
+	publicKeyList []jwk.Key
+}
+
+func (m *mockPrivateKeySource) current(now time.Time) (jwk.Key, error) {
+	if m.currentError != nil {
+		return nil, m.currentError
+	}
+	if m.privateKey != nil {
+		return m.privateKey, nil
+	}
+	// Generate a test key if none provided
+	priv, _ := rsa.GenerateKey(rand.Reader, 2048)
+	key, _ := jwk.Import(priv)
+	return key, nil
+}
+
+func (m *mockPrivateKeySource) publicKeys(now time.Time) []jwk.Key {
+	return m.publicKeyList
+}
+
+func newTestTokenIssuer(keySource privateKeySource) *tokenIssuer {
+	if keySource == nil {
+		// Create a working test key source with the same key for signing and verifying
+		priv, _ := rsa.GenerateKey(rand.Reader, 2048)
+		privateKey, _ := jwk.Import(priv)
+		publicKey, _ := privateKey.PublicKey()
+		keySource = &mockPrivateKeySource{
+			privateKey:    privateKey,
+			publicKeyList: []jwk.Key{publicKey},
+		}
+	}
+	return &tokenIssuer{keySource}
+}
+
+// newTestTokenIssuerWithSharedKeys creates a token issuer that uses the same keys for all tests
+func newTestTokenIssuerWithSharedKeys() (*tokenIssuer, jwk.Key, jwk.Key) {
+	priv, _ := rsa.GenerateKey(rand.Reader, 2048)
+	privateKey, _ := jwk.Import(priv)
+	publicKey, _ := privateKey.PublicKey()
+	keySource := &mockPrivateKeySource{
+		privateKey:    privateKey,
+		publicKeyList: []jwk.Key{publicKey},
+	}
+	return &tokenIssuer{keySource}, privateKey, publicKey
+}
+
+func fixedTimeFunc() func() time.Time {
+	fixedTime := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
+	return func() time.Time { return fixedTime }
+}
+
 func newMockTokenServer() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -145,11 +204,12 @@ func newMockTokenServer() *httptest.Server {
 
 func TestAuthenticate(t *testing.T) {
 	tests := []struct {
-		name             string
-		bearerToken      string
-		verifyTokenError error
-		expectedStatus   int
-		expectedWWWAuth  bool
+		name                string
+		bearerToken         string
+		useValidToken       bool
+		expectedStatus      int
+		expectedWWWAuth     bool
+		expectedAccessToken bool
 	}{
 		{
 			name:            "missing bearer token",
@@ -158,16 +218,16 @@ func TestAuthenticate(t *testing.T) {
 			expectedWWWAuth: true,
 		},
 		{
-			name:             "invalid bearer token",
-			bearerToken:      "invalid-token",
-			verifyTokenError: errors.New("invalid token"),
-			expectedStatus:   http.StatusUnauthorized,
-			expectedWWWAuth:  true,
+			name:            "invalid bearer token",
+			bearerToken:     "invalid-token",
+			expectedStatus:  http.StatusUnauthorized,
+			expectedWWWAuth: true,
 		},
 		{
-			name:           "valid bearer token",
-			bearerToken:    "valid-token",
-			expectedStatus: http.StatusOK,
+			name:                "valid bearer token",
+			useValidToken:       true,
+			expectedStatus:      http.StatusOK,
+			expectedAccessToken: true,
 		},
 	}
 
@@ -175,17 +235,23 @@ func TestAuthenticate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			mockProv := &mockProvider{
-				verifyBearerTokenError: tt.verifyTokenError,
-			}
+			tokenIssuer, _, _ := newTestTokenIssuerWithSharedKeys()
+			mockProv := &mockProvider{}
 			conf := newTestConfig()
 			sessionStore := newMemorySessionStore()
 
-			api := newAPI(mockProv, &conf.Proxy, sessionStore)
+			api := newAPI(tokenIssuer, mockProv, &conf.Proxy, sessionStore, time.Now)
 
 			req := httptest.NewRequest(http.MethodGet, pathAuthenticate, nil)
-			if tt.bearerToken != "" {
-				req.Header.Set("Authorization", "Bearer "+tt.bearerToken)
+			bearerToken := tt.bearerToken
+			if tt.useValidToken {
+				// Issue a valid token for this test
+				validToken, _, err := tokenIssuer.issue("https://example.com", "test-user", "mcp-oauth2-proxy", time.Now())
+				g.Expect(err).ToNot(HaveOccurred())
+				bearerToken = validToken
+			}
+			if bearerToken != "" {
+				req.Header.Set("Authorization", "Bearer "+bearerToken)
 			}
 			rec := httptest.NewRecorder()
 
@@ -195,6 +261,9 @@ func TestAuthenticate(t *testing.T) {
 			if tt.expectedWWWAuth {
 				g.Expect(rec.Header().Get("WWW-Authenticate")).To(ContainSubstring("Bearer realm="))
 			}
+			if tt.expectedAccessToken {
+				g.Expect(rec.Header().Get(responseHeaderAccessToken)).To(Equal(bearerToken))
+			}
 		})
 	}
 }
@@ -202,11 +271,12 @@ func TestAuthenticate(t *testing.T) {
 func TestOAuthProtectedResource(t *testing.T) {
 	g := NewWithT(t)
 
+	tokenIssuer := newTestTokenIssuer(nil)
 	mockProv := &mockProvider{}
 	conf := newTestConfig()
 	sessionStore := newMemorySessionStore()
 
-	api := newAPI(mockProv, &conf.Proxy, sessionStore)
+	api := newAPI(tokenIssuer, mockProv, &conf.Proxy, sessionStore, time.Now)
 
 	req := httptest.NewRequest(http.MethodGet, pathOAuthProtectedResource, nil)
 	req.Host = "example.com"
@@ -231,11 +301,12 @@ func TestOAuthProtectedResource(t *testing.T) {
 func TestOAuthAuthorizationServer(t *testing.T) {
 	g := NewWithT(t)
 
+	tokenIssuer := newTestTokenIssuer(nil)
 	mockProv := &mockProvider{}
 	conf := newTestConfig()
 	sessionStore := newMemorySessionStore()
 
-	api := newAPI(mockProv, &conf.Proxy, sessionStore)
+	api := newAPI(tokenIssuer, mockProv, &conf.Proxy, sessionStore, time.Now)
 
 	req := httptest.NewRequest(http.MethodGet, pathOAuthAuthorizationServer, nil)
 	req.Host = "example.com"
@@ -262,12 +333,13 @@ func TestOAuthAuthorizationServer(t *testing.T) {
 
 func TestRegister(t *testing.T) {
 	tests := []struct {
-		name               string
-		requestBody        string
-		expectedStatus     int
-		checkResponse      bool
-		config             *config
-		expectRedirectURIs bool
+		name                 string
+		requestBody          string
+		expectedStatus       int
+		checkResponse        bool
+		config               *config
+		expectRedirectURIs   bool
+		expectedRedirectURIs []string
 	}{
 		{
 			name:           "invalid JSON",
@@ -304,11 +376,44 @@ func TestRegister(t *testing.T) {
 			expectRedirectURIs: false,
 		},
 		{
-			name:               "valid registration with redirect URIs",
-			requestBody:        `{"redirect_uris": ["https://example.com/callback"], "client_name": "test-client"}`,
-			expectedStatus:     http.StatusCreated,
-			checkResponse:      true,
-			expectRedirectURIs: true,
+			name:                 "valid registration with any redirect URI when no allow list configured",
+			requestBody:          `{"redirect_uris": ["https://any-domain.com/callback"], "client_name": "test-client"}`,
+			expectedStatus:       http.StatusCreated,
+			checkResponse:        true,
+			expectRedirectURIs:   true,
+			expectedRedirectURIs: []string{"https://any-domain.com/callback"},
+			config: &config{
+				Provider: providerConfig{
+					ClientID:     "test-client-id",
+					ClientSecret: "test-client-secret",
+				},
+				Proxy: proxyConfig{
+					AllowedRedirectURLs: []string{}, // Empty list should allow any URL
+				},
+				Server: serverConfig{
+					Addr: "localhost:8080",
+				},
+			},
+		},
+		{
+			name:                 "valid registration with redirect URIs matching regex",
+			requestBody:          `{"redirect_uris": ["https://example.com/callback"], "client_name": "test-client"}`,
+			expectedStatus:       http.StatusCreated,
+			checkResponse:        true,
+			expectRedirectURIs:   true,
+			expectedRedirectURIs: []string{"https://example.com/callback"},
+			config: &config{
+				Provider: providerConfig{
+					ClientID:     "test-client-id",
+					ClientSecret: "test-client-secret",
+				},
+				Proxy: proxyConfig{
+					AllowedRedirectURLs: []string{"^https://example\\.com/.*"}, // This should match
+				},
+				Server: serverConfig{
+					Addr: "localhost:8080",
+				},
+			},
 		},
 	}
 
@@ -316,11 +421,12 @@ func TestRegister(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
+			tokenIssuer := newTestTokenIssuer(nil)
 			mockProv := &mockProvider{}
 			conf := setupConfig(g, tt.config)
 			sessionStore := newMemorySessionStore()
 
-			api := newAPI(mockProv, &conf.Proxy, sessionStore)
+			api := newAPI(tokenIssuer, mockProv, &conf.Proxy, sessionStore, time.Now)
 
 			req := httptest.NewRequest(http.MethodPost, pathRegister, strings.NewReader(tt.requestBody))
 			req.Header.Set("Content-Type", "application/json")
@@ -337,7 +443,15 @@ func TestRegister(t *testing.T) {
 				g.Expect(response["token_endpoint_auth_method"]).To(Equal(authorizationServerTokenEndpointAuthMethod))
 
 				if tt.expectRedirectURIs {
-					g.Expect(response["redirect_uris"]).To(Equal([]any{"https://example.com/callback"}))
+					if tt.expectedRedirectURIs != nil {
+						expected := make([]any, len(tt.expectedRedirectURIs))
+						for i, uri := range tt.expectedRedirectURIs {
+							expected[i] = uri
+						}
+						g.Expect(response["redirect_uris"]).To(Equal(expected))
+					} else {
+						g.Expect(response["redirect_uris"]).To(Equal([]any{"https://example.com/callback"}))
+					}
 				} else {
 					g.Expect(response["redirect_uris"]).To(BeNil())
 				}
@@ -423,6 +537,7 @@ func TestAuthorize(t *testing.T) {
 				}
 			}
 
+			tokenIssuer := newTestTokenIssuer(nil)
 			mockProv := &mockProvider{}
 			conf := setupConfig(g, tt.config)
 			sessionStore := tt.sessionStore
@@ -430,7 +545,7 @@ func TestAuthorize(t *testing.T) {
 				sessionStore = newMemorySessionStore()
 			}
 
-			api := newAPI(mockProv, &conf.Proxy, sessionStore)
+			api := newAPI(tokenIssuer, mockProv, &conf.Proxy, sessionStore, time.Now)
 
 			req := httptest.NewRequest(http.MethodGet, pathAuthorize+"?"+tt.queryParams, nil)
 			req.Host = "example.com"
@@ -463,6 +578,7 @@ func TestCallback(t *testing.T) {
 		csrfMismatch     bool
 		retrieveError    bool
 		needsTokenServer bool
+		issueError       bool
 	}{
 		{
 			name:           "missing CSRF cookie",
@@ -520,6 +636,16 @@ func TestCallback(t *testing.T) {
 			verifyError:      errors.New("verify failed"),
 			expectedStatus:   http.StatusBadRequest,
 			needsTokenServer: true,
+		},
+		{
+			name:             "token issuer failure",
+			setupSession:     true,
+			setCookie:        true,
+			queryParams:      "code=auth-code&state=SESSION_KEY_PLACEHOLDER",
+			tokens:           map[string]string{"access_token": "token"},
+			expectedStatus:   http.StatusInternalServerError,
+			needsTokenServer: true,
+			issueError:       true,
 		},
 		{
 			name:             "successful callback",
@@ -582,7 +708,13 @@ func TestCallback(t *testing.T) {
 				sessionStore = newMemorySessionStore()
 			}
 
-			api := newAPI(mockProv, &conf.Proxy, sessionStore)
+			// Setup token issuer with potential error
+			var keySource privateKeySource
+			if tt.issueError {
+				keySource = &mockPrivateKeySource{currentError: errors.New("key generation failed")}
+			}
+			tokenIssuer := newTestTokenIssuer(keySource)
+			api := newAPI(tokenIssuer, mockProv, &conf.Proxy, sessionStore, time.Now)
 
 			// For successful callback test, we need the session key to match the cookie value
 			var sessionKey string
@@ -595,7 +727,13 @@ func TestCallback(t *testing.T) {
 				// For session not found test, replace session store after setting up session
 				if tt.retrieveError {
 					sessionStore = &mockSessionStore{sessionStore: sessionStore, retrieveError: true}
-					api = newAPI(mockProv, &conf.Proxy, sessionStore)
+					// Need to recreate API with updated session store
+					var keySource privateKeySource
+					if tt.issueError {
+						keySource = &mockPrivateKeySource{currentError: errors.New("key generation failed")}
+					}
+					tokenIssuer = newTestTokenIssuer(keySource)
+					api = newAPI(tokenIssuer, mockProv, &conf.Proxy, sessionStore, time.Now)
 				}
 			} else {
 				sessionKey = "invalid-state"
@@ -657,17 +795,23 @@ func TestToken(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
+			tokenIssuer := newTestTokenIssuer(nil)
 			mockProv := &mockProvider{}
 			conf := newTestConfig()
 			sessionStore := newMemorySessionStore()
 
-			api := newAPI(mockProv, &conf.Proxy, sessionStore)
+			api := newAPI(tokenIssuer, mockProv, &conf.Proxy, sessionStore, time.Now)
 
 			var authzCode string
 			if tt.setupSession {
 				tx := newTestTransaction()
-				tokens := map[string]string{"access_token": "test-token"}
-				s := &session{tx: tx, tokens: tokens}
+				// Create outcome with JWT token structure
+				outcome := &oauth2.Token{
+					AccessToken: "test-jwt-token",
+					TokenType:   "Bearer",
+					Expiry:      time.Now().Add(time.Hour),
+				}
+				s := &session{tx: tx, outcome: outcome}
 				var err error
 				authzCode, err = sessionStore.store(s)
 				g.Expect(err).ToNot(HaveOccurred())
@@ -688,7 +832,8 @@ func TestToken(t *testing.T) {
 
 			if tt.checkResponse {
 				response := parseJSONResponse(g, rec.Body.Bytes())
-				g.Expect(response["access_token"]).To(Equal("test-token"))
+				g.Expect(response["access_token"]).To(Equal("test-jwt-token"))
+				g.Expect(response["token_type"]).To(Equal("Bearer"))
 			}
 		})
 	}

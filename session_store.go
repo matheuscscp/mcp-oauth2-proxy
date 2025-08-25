@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"golang.org/x/oauth2"
 )
 
 const (
@@ -26,7 +28,7 @@ type memorySessionStore struct {
 
 type session struct {
 	tx        *transaction
-	tokens    any
+	outcome   *oauth2.Token
 	expiresAt time.Time
 }
 
