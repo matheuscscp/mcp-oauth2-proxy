@@ -125,6 +125,8 @@ func TestTokenIssuer_verify(t *testing.T) {
 		name          string
 		setupToken    func(ti *tokenIssuer, now time.Time) string
 		keySource     privateKeySource
+		iss           string
+		aud           string
 		expectedValid bool
 	}{
 		{
@@ -136,6 +138,8 @@ func TestTokenIssuer_verify(t *testing.T) {
 				}
 				return token
 			},
+			iss:           "https://example.com",
+			aud:           "mcp-oauth2-proxy",
 			expectedValid: true,
 		},
 		{
@@ -143,6 +147,8 @@ func TestTokenIssuer_verify(t *testing.T) {
 			setupToken: func(ti *tokenIssuer, now time.Time) string {
 				return "invalid-token"
 			},
+			iss:           "https://example.com",
+			aud:           "mcp-oauth2-proxy",
 			expectedValid: false,
 		},
 		{
@@ -150,6 +156,8 @@ func TestTokenIssuer_verify(t *testing.T) {
 			setupToken: func(ti *tokenIssuer, now time.Time) string {
 				return ""
 			},
+			iss:           "https://example.com",
+			aud:           "mcp-oauth2-proxy",
 			expectedValid: false,
 		},
 		{
@@ -163,6 +171,8 @@ func TestTokenIssuer_verify(t *testing.T) {
 				}
 				return token
 			},
+			iss:           "https://example.com",
+			aud:           "mcp-oauth2-proxy",
 			expectedValid: false,
 		},
 		{
@@ -185,6 +195,8 @@ func TestTokenIssuer_verify(t *testing.T) {
 				b, _ := jwt.Sign(tok, jwt.WithKey(issuerAlgorithm(), wrongKey))
 				return string(b)
 			},
+			iss:           "https://example.com",
+			aud:           "mcp-oauth2-proxy",
 			expectedValid: false,
 		},
 		{
@@ -195,6 +207,119 @@ func TestTokenIssuer_verify(t *testing.T) {
 			setupToken: func(ti *tokenIssuer, now time.Time) string {
 				return "any-token"
 			},
+			iss:           "https://example.com",
+			aud:           "mcp-oauth2-proxy",
+			expectedValid: false,
+		},
+		{
+			name: "wrong issuer",
+			setupToken: func(ti *tokenIssuer, now time.Time) string {
+				token, _, err := ti.issue("https://wrong-issuer.com", "user@example.com", "mcp-oauth2-proxy", now)
+				if err != nil {
+					panic(err)
+				}
+				return token
+			},
+			iss:           "https://example.com",
+			aud:           "mcp-oauth2-proxy",
+			expectedValid: false,
+		},
+		{
+			name: "wrong audience",
+			setupToken: func(ti *tokenIssuer, now time.Time) string {
+				token, _, err := ti.issue("https://example.com", "user@example.com", "wrong-audience", now)
+				if err != nil {
+					panic(err)
+				}
+				return token
+			},
+			iss:           "https://example.com",
+			aud:           "mcp-oauth2-proxy",
+			expectedValid: false,
+		},
+		{
+			name: "multiple audiences - valid",
+			setupToken: func(ti *tokenIssuer, now time.Time) string {
+				// Create token with multiple audiences
+				tok, _ := jwt.NewBuilder().
+					Issuer("https://example.com").
+					Subject("user@example.com").
+					Audience([]string{"other-service", "mcp-oauth2-proxy"}).
+					Expiration(now.Add(issuerTokenDuration)).
+					NotBefore(now).
+					IssuedAt(now).
+					JwtID(uuid.NewString()).
+					Build()
+
+				cur, _ := ti.current(now)
+				b, _ := jwt.Sign(tok, jwt.WithKey(issuerAlgorithm(), cur))
+				return string(b)
+			},
+			iss:           "https://example.com",
+			aud:           "mcp-oauth2-proxy",
+			expectedValid: true,
+		},
+		{
+			name: "token without issuer claim",
+			setupToken: func(ti *tokenIssuer, now time.Time) string {
+				// Create token without issuer
+				tok, _ := jwt.NewBuilder().
+					Subject("user@example.com").
+					Audience([]string{"mcp-oauth2-proxy"}).
+					Expiration(now.Add(issuerTokenDuration)).
+					NotBefore(now).
+					IssuedAt(now).
+					JwtID(uuid.NewString()).
+					Build()
+
+				cur, _ := ti.current(now)
+				b, _ := jwt.Sign(tok, jwt.WithKey(issuerAlgorithm(), cur))
+				return string(b)
+			},
+			iss:           "https://example.com",
+			aud:           "mcp-oauth2-proxy",
+			expectedValid: false,
+		},
+		{
+			name: "token without audience claim",
+			setupToken: func(ti *tokenIssuer, now time.Time) string {
+				// Create token without audience
+				tok, _ := jwt.NewBuilder().
+					Issuer("https://example.com").
+					Subject("user@example.com").
+					Expiration(now.Add(issuerTokenDuration)).
+					NotBefore(now).
+					IssuedAt(now).
+					JwtID(uuid.NewString()).
+					Build()
+
+				cur, _ := ti.current(now)
+				b, _ := jwt.Sign(tok, jwt.WithKey(issuerAlgorithm(), cur))
+				return string(b)
+			},
+			iss:           "https://example.com",
+			aud:           "mcp-oauth2-proxy",
+			expectedValid: false,
+		},
+		{
+			name: "token without expiration claim",
+			setupToken: func(ti *tokenIssuer, now time.Time) string {
+				// Create token without expiration
+				tok, _ := jwt.NewBuilder().
+					Issuer("https://example.com").
+					Subject("user@example.com").
+					Audience([]string{"mcp-oauth2-proxy"}).
+					NotBefore(now).
+					IssuedAt(now).
+					JwtID(uuid.NewString()).
+					Build()
+
+				cur, _ := ti.current(now)
+				b, _ := jwt.Sign(tok, jwt.WithKey(issuerAlgorithm(), cur))
+				return string(b)
+			},
+			iss:           "https://example.com",
+			aud:           "mcp-oauth2-proxy",
 			expectedValid: false,
 		},
 	}
@@ -214,7 +339,7 @@ func TestTokenIssuer_verify(t *testing.T) {
 			now := time.Now()
 
 			token := tt.setupToken(ti, now)
-			isValid := ti.verify(token, now)
+			isValid := ti.verify(token, now, tt.iss, tt.aud)
 
 			g.Expect(isValid).To(Equal(tt.expectedValid))
 		})

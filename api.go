@@ -32,7 +32,9 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 	mux.HandleFunc(pathAuthenticate, func(w http.ResponseWriter, r *http.Request) {
 		token := bearerToken(r)
 
-		if !ti.verify(token, nowFunc()) {
+		iss := baseURL(r)
+		aud := mcpOAuth2Proxy
+		if !ti.verify(token, nowFunc(), iss, aud) {
 			respondWWWAuthenticate(w, r)
 			return
 		}

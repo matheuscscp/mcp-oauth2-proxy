@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -84,14 +85,27 @@ func (t *tokenIssuer) issue(iss, sub, aud string, now time.Time) (string, time.T
 	return string(b), exp, nil
 }
 
-func (t *tokenIssuer) verify(bearerToken string, now time.Time) bool {
+func (t *tokenIssuer) verify(bearerToken string, now time.Time, iss, aud string) bool {
 	for _, key := range t.publicKeys(now) {
-		_, err := jwt.Parse([]byte(bearerToken),
+		token, err := jwt.Parse([]byte(bearerToken),
 			jwt.WithKey(issuerAlgorithm(), key),
 			jwt.WithValidate(true))
-		if err == nil {
-			return true
+		if err != nil {
+			continue
 		}
+		tokenIssuer, ok := token.Issuer()
+		if !ok || tokenIssuer != iss {
+			continue
+		}
+		tokenAudience, ok := token.Audience()
+		if !ok || !slices.Contains(tokenAudience, aud) {
+			continue
+		}
+		tokenExpiration, ok := token.Expiration()
+		if !ok || tokenExpiration.Before(now) {
+			continue
+		}
+		return true
 	}
 	return false
 }
