@@ -9,7 +9,6 @@ import (
 )
 
 type provider interface {
-	supportedScopes() []string
 	oauth2Config(r *http.Request) *oauth2.Config
 	verifyBearerToken(ctx context.Context, bearerToken string) error
 	verifyAndRepackExchangedTokens(ctx context.Context, token *oauth2.Token) (any, error)

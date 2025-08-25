@@ -17,15 +17,10 @@ import (
 
 // mockProvider implements the provider interface for testing
 type mockProvider struct {
-	scopes                            []string
 	verifyBearerTokenError            error
 	oauth2ConfigFunc                  func(r *http.Request) *oauth2.Config
 	verifyAndRepackExchangedTokensRes any
 	verifyAndRepackExchangedTokensErr error
-}
-
-func (m *mockProvider) supportedScopes() []string {
-	return m.scopes
 }
 
 func (m *mockProvider) oauth2Config(r *http.Request) *oauth2.Config {
@@ -236,9 +231,7 @@ func TestOAuthProtectedResource(t *testing.T) {
 func TestOAuthAuthorizationServer(t *testing.T) {
 	g := NewWithT(t)
 
-	mockProv := &mockProvider{
-		scopes: []string{"openid", "profile"},
-	}
+	mockProv := &mockProvider{}
 	conf := newTestConfig()
 	sessionStore := newMemorySessionStore()
 
@@ -259,11 +252,11 @@ func TestOAuthAuthorizationServer(t *testing.T) {
 	g.Expect(response["authorization_endpoint"]).To(Equal("https://example.com" + pathAuthorize))
 	g.Expect(response["token_endpoint"]).To(Equal("https://example.com" + pathToken))
 	g.Expect(response["registration_endpoint"]).To(Equal("https://example.com" + pathRegister))
-	g.Expect(response["scopes_supported"]).To(Equal([]any{"openid", "profile"}))
 	g.Expect(response["code_challenge_methods_supported"]).To(Equal([]any{authorizationServerCodeChallengeMethod}))
 	g.Expect(response["grant_types_supported"]).To(Equal([]any{authorizationServerGrantType}))
 	g.Expect(response["response_modes_supported"]).To(Equal([]any{authorizationServerResponseMode}))
 	g.Expect(response["response_types_supported"]).To(Equal([]any{authorizationServerResponseType}))
+	g.Expect(response["scopes_supported"]).To(Equal([]any{authorizationServerScope}))
 	g.Expect(response["token_endpoint_auth_methods_supported"]).To(Equal([]any{authorizationServerTokenEndpointAuthMethod}))
 }
 

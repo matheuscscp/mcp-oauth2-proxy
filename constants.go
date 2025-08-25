@@ -1,7 +1,7 @@
 package main
 
 const (
-	proxyClientID = "mcp-oauth2-proxy"
+	mcpOAuth2Proxy = "mcp-oauth2-proxy"
 
 	queryParamAuthorizationCode   = "code"
 	queryParamCodeChallenge       = "code_challenge"
@@ -14,5 +14,6 @@ const (
 	authorizationServerGrantType               = "authorization_code"
 	authorizationServerResponseMode            = "query"
 	authorizationServerResponseType            = "code"
+	authorizationServerScope                   = mcpOAuth2Proxy
 	authorizationServerTokenEndpointAuthMethod = "none"
 )

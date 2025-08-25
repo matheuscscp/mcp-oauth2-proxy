@@ -58,11 +58,11 @@ func newAPI(p provider, conf *proxyConfig, sessionStore sessionStore) http.Handl
 			"authorization_endpoint":                fmt.Sprintf("%s%s", baseURL(r), pathAuthorize),
 			"token_endpoint":                        fmt.Sprintf("%s%s", baseURL(r), pathToken),
 			"registration_endpoint":                 fmt.Sprintf("%s%s", baseURL(r), pathRegister),
-			"scopes_supported":                      p.supportedScopes(),
 			"code_challenge_methods_supported":      []string{authorizationServerCodeChallengeMethod},
 			"grant_types_supported":                 []string{authorizationServerGrantType},
 			"response_modes_supported":              []string{authorizationServerResponseMode},
 			"response_types_supported":              []string{authorizationServerResponseType},
+			"scopes_supported":                      []string{authorizationServerScope},
 			"token_endpoint_auth_methods_supported": []string{authorizationServerTokenEndpointAuthMethod},
 		})
 	})
@@ -99,7 +99,7 @@ func newAPI(p provider, conf *proxyConfig, sessionStore sessionStore) http.Handl
 		}
 
 		resp := map[string]any{
-			"client_id":                  proxyClientID,
+			"client_id":                  mcpOAuth2Proxy,
 			"token_endpoint_auth_method": authorizationServerTokenEndpointAuthMethod,
 		}
 		if len(req.RedirectURIs) > 0 {

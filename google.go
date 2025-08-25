@@ -15,11 +15,6 @@ type googleProvider struct {
 	*providerConfig
 }
 
-// supportedScopes implements provider.
-func (*googleProvider) supportedScopes() []string {
-	return []string{oidc.ScopeOpenID, "email"}
-}
-
 // oauth2Config implements provider.
 func (g *googleProvider) oauth2Config(r *http.Request) *oauth2.Config {
 	return &oauth2.Config{
@@ -27,7 +22,7 @@ func (g *googleProvider) oauth2Config(r *http.Request) *oauth2.Config {
 		ClientSecret: g.ClientSecret,
 		RedirectURL:  callbackURL(r),
 		Endpoint:     google.Endpoint,
-		Scopes:       g.supportedScopes(),
+		Scopes:       []string{oidc.ScopeOpenID, "email"},
 	}
 }
 
