@@ -8,7 +8,7 @@ import (
 // transaction represents an OAuth 2.0 authorization request.
 // It contains the client parameters required for the authorization
 // flows that must be supported by the proxy and the code verifier
-// for PKCE with the configured IdP provider.
+// for PKCE with the configured IdP.
 type transaction struct {
 	clientParams transactionClientParams
 	codeVerifier string

@@ -94,6 +94,7 @@ func newAPI(p provider, conf *proxyConfig, sessionStore sessionStore) http.Handl
 			return
 		}
 
+		// Prepare PKCE with configured IdP.
 		codeVerifier, err := pkceVerifier()
 		if err != nil {
 			l.WithError(err).Error("failed to generate code verifier")
@@ -187,6 +188,7 @@ func newAPI(p provider, conf *proxyConfig, sessionStore sessionStore) http.Handl
 			return
 		}
 
+		// Validate client PKCE.
 		if s.tx.clientParams.codeChallenge != pkceS256Challenge(r.FormValue(queryParamCodeVerifier)) {
 			http.Error(w, "PKCE failed", http.StatusBadRequest)
 			return
