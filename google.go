@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
@@ -22,7 +21,7 @@ func (g *googleProvider) oauth2Config(r *http.Request) *oauth2.Config {
 		ClientSecret: g.ClientSecret,
 		RedirectURL:  callbackURL(r),
 		Endpoint:     google.Endpoint,
-		Scopes:       []string{oidc.ScopeOpenID, "email"},
+		Scopes:       []string{"email"},
 	}
 }
 
@@ -40,16 +39,30 @@ func (g *googleProvider) verifyBearerToken(ctx context.Context, bearerToken stri
 		return fmt.Errorf("userinfo: %s", resp.Status)
 	}
 
-	return g.verifyClaims(json.NewDecoder(resp.Body).Decode)
+	var claims struct {
+		Email         string `json:"email"`
+		EmailVerified bool   `json:"email_verified"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&claims); err != nil {
+		return fmt.Errorf("error unmarshaling claims from google id token: %w", err)
+	}
+	email := claims.Email
+
+	if !claims.EmailVerified {
+		return fmt.Errorf("google email '%s' is not verified", email)
+	}
+
+	if !g.validateEmailDomain(email) {
+		return fmt.Errorf("the domain of the email '%s' is not allowed", email)
+	}
+
+	return nil
 }
 
 // verifyAndRepackExchangedTokens implements provider.
 func (g *googleProvider) verifyAndRepackExchangedTokens(ctx context.Context, token *oauth2.Token) (any, error) {
-	// Verify user.
-	const idTokenKey = "id_token"
-	idToken := token.Extra(idTokenKey).(string)
-	if err := g.verifyIDToken(ctx, idToken); err != nil {
-		return nil, fmt.Errorf("error verifying google id token: %w", err)
+	if err := g.verifyBearerToken(ctx, token.AccessToken); err != nil {
+		return nil, err
 	}
 
 	// Recast token to map[string]any.
@@ -65,43 +78,5 @@ func (g *googleProvider) verifyAndRepackExchangedTokens(ctx context.Context, tok
 		resp = make(map[string]any)
 	}
 
-	resp[idTokenKey] = idToken
 	return resp, nil
-}
-
-func (g *googleProvider) verifyIDToken(ctx context.Context, idToken string) error {
-	provider, err := oidc.NewProvider(ctx, "https://accounts.google.com")
-	if err != nil {
-		return fmt.Errorf("error creating google oidc provider: %w", err)
-	}
-
-	token, err := provider.
-		VerifierContext(ctx, &oidc.Config{ClientID: g.ClientID}).
-		Verify(ctx, idToken)
-	if err != nil {
-		return fmt.Errorf("error verifying google id token: %w", err)
-	}
-
-	return g.verifyClaims(token.Claims)
-}
-
-func (g *googleProvider) verifyClaims(getClaims func(any) error) error {
-	var claims struct {
-		Email         string `json:"email"`
-		EmailVerified bool   `json:"email_verified"`
-	}
-	if err := getClaims(&claims); err != nil {
-		return fmt.Errorf("error unmarshaling claims from google id token: %w", err)
-	}
-	email := claims.Email
-
-	if !claims.EmailVerified {
-		return fmt.Errorf("google email '%s' is not verified", email)
-	}
-
-	if !g.validateEmailDomain(email) {
-		return fmt.Errorf("the domain of the email '%s' is not allowed", email)
-	}
-
-	return nil
 }
