@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"net/url"
 	"sync"
 	"time"
 )
@@ -14,61 +13,75 @@ const (
 )
 
 type sessionStore interface {
-	store(tx url.Values, tokens any) (string, error)
-	retrieve(key string) (url.Values, any, bool)
+	storeTransaction(tx *transaction) (string, error)
+	store(s *session) (string, error)
+	retrieveTransaction(key string) (*transaction, bool)
+	retrieve(key string) (*session, bool)
 }
 
 type memorySessionStore struct {
+	mp map[string]*session
 	mu sync.Mutex
-	m  map[string]*session
 }
 
 type session struct {
-	tx        url.Values
+	tx        *transaction
 	tokens    any
 	expiresAt time.Time
 }
 
 func newMemorySessionStore() *memorySessionStore {
 	return &memorySessionStore{
-		m: make(map[string]*session),
+		mp: make(map[string]*session),
 	}
 }
 
-func (m *memorySessionStore) store(tx url.Values, tokens any) (string, error) {
+func (m *memorySessionStore) storeTransaction(tx *transaction) (string, error) {
+	return m.store(&session{tx: tx})
+}
+
+func (m *memorySessionStore) store(s *session) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	for {
 		// The algorithm below for generating the key makes it usable both as
-		// as an authorization code or as a CSRF token.
+		// as an authorization code or as a CSRF state.
 		keyBytes := make([]byte, 32)
 		if _, err := rand.Read(keyBytes); err != nil {
-			return "", fmt.Errorf("error generating key for session store: %w", err)
+			return "", fmt.Errorf("error generating key for session: %w", err)
 		}
 		key := base64.RawURLEncoding.EncodeToString(keyBytes)
 
-		if s, ok := m.m[key]; !ok || s.expiresAt.Before(time.Now()) {
-			expiresAt := time.Now().Add(sessionStoreTimeout)
-			m.m[key] = &session{tx, tokens, expiresAt}
+		if cur, ok := m.mp[key]; !ok || cur.expiresAt.Before(time.Now()) {
+			s.expiresAt = time.Now().Add(sessionStoreTimeout)
+			m.mp[key] = s
 			return key, nil
 		}
 	}
 }
 
-func (m *memorySessionStore) retrieve(key string) (url.Values, any, bool) {
+func (m *memorySessionStore) retrieveTransaction(key string) (*transaction, bool) {
+	s, ok := m.retrieve(key)
+	if !ok {
+		return nil, false
+	}
+	return s.tx, true
+}
+
+func (m *memorySessionStore) retrieve(key string) (*session, bool) {
 	m.mu.Lock()
-	s, ok := m.m[key]
-	delete(m.m, key)
-	for k, v := range m.m {
+	s, ok := m.mp[key]
+	delete(m.mp, key)
+	for k, v := range m.mp {
 		if v.expiresAt.Before(time.Now()) {
-			delete(m.m, k)
+			delete(m.mp, k)
 		}
 	}
 	m.mu.Unlock()
 
 	if !ok || s.expiresAt.Before(time.Now()) {
-		return nil, nil, false
+		return nil, false
 	}
-	return s.tx, s.tokens, true
+	return s, true
 }

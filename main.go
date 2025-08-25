@@ -23,9 +23,9 @@ func init() {
 }
 
 func getProviderAndConfig() (provider, *config) {
-	conf, err := readConfig()
+	conf, err := newConfig()
 	if err != nil {
-		logrus.WithError(err).Fatal("failed to read config")
+		logrus.WithError(err).Fatal("failed to create config")
 	}
 	p, err := newProvider(conf)
 	if err != nil {
@@ -39,7 +39,7 @@ func main() {
 	signal.Notify(signalReceived, os.Interrupt, syscall.SIGTERM)
 
 	p, conf := getProviderAndConfig()
-	api := newAPI(p, conf, newMemorySessionStore())
+	api := newAPI(p, &conf.Proxy, newMemorySessionStore())
 
 	addr := conf.Server.Addr
 	if addr == "" {

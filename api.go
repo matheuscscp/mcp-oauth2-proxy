@@ -22,7 +22,7 @@ const (
 	pathToken                    = "/token"
 )
 
-func newAPI(p provider, conf *config, sessionStore sessionStore) http.Handler {
+func newAPI(p provider, conf *proxyConfig, sessionStore sessionStore) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc(pathAuthenticate, func(w http.ResponseWriter, r *http.Request) {
@@ -102,9 +102,14 @@ func newAPI(p provider, conf *config, sessionStore sessionStore) http.Handler {
 		}
 		codeChallenge := pkceS256Challenge(codeVerifier)
 
-		tx := r.URL.Query()
-		tx.Set(queryParamCodeVerifier, codeVerifier)
-		state, err := sessionStore.store(tx, nil)
+		tx, err := newTransaction(conf, r, codeVerifier)
+		if err != nil {
+			l.WithError(err).Error("invalid transaction")
+			http.Error(w, fmt.Sprintf("Invalid parameters: %v", err), http.StatusBadRequest)
+			return
+		}
+
+		state, err := sessionStore.storeTransaction(tx)
 		if err != nil {
 			l.WithError(err).Error("failed to generate state")
 			http.Error(w, "Failed to generate state", http.StatusInternalServerError)
@@ -123,19 +128,19 @@ func newAPI(p provider, conf *config, sessionStore sessionStore) http.Handler {
 
 		state, err := getAndDeleteStateAndCheckCSRF(w, r)
 		if err != nil {
-			l.WithError(err).Error("failed to check CSRF")
-			http.Error(w, "Failed to check CSRF", http.StatusBadRequest)
+			l.WithError(err).Error("CSRF failed")
+			http.Error(w, "CSRF failed", http.StatusBadRequest)
 			return
 		}
 
-		tx, _, ok := sessionStore.retrieve(state)
+		tx, ok := sessionStore.retrieveTransaction(state)
 		if !ok {
 			http.Error(w, "Session expired", http.StatusBadRequest)
 			return
 		}
 
 		oauth2Token, err := p.oauth2Config(r).Exchange(r.Context(), authorizationCode(r),
-			oauth2.SetAuthURLParam(queryParamCodeVerifier, tx.Get(queryParamCodeVerifier)))
+			oauth2.SetAuthURLParam(queryParamCodeVerifier, tx.codeVerifier))
 		if err != nil {
 			l.WithError(err).Error("failed to exchange authorization code for tokens")
 			http.Error(w, "Failed to exchange authorization code for tokens", http.StatusBadRequest)
@@ -149,17 +154,18 @@ func newAPI(p provider, conf *config, sessionStore sessionStore) http.Handler {
 			return
 		}
 
-		authzCode, err := sessionStore.store(tx, tokens)
+		s := &session{tx: tx, tokens: tokens}
+		authzCode, err := sessionStore.store(s)
 		if err != nil {
 			l.WithError(err).Error("failed to store tokens with authorization code")
 			http.Error(w, "Failed to store tokens with authorization code", http.StatusInternalServerError)
 			return
 		}
 
-		redirectURI := tx.Get(queryParamRedirectURI)
+		redirectURI := tx.clientParams.redirectURL
 		redirectParams := url.Values{}
 		redirectParams.Set(queryParamAuthorizationCode, authzCode)
-		redirectParams.Set(queryParamState, tx.Get(queryParamState))
+		redirectParams.Set(queryParamState, tx.clientParams.state)
 		redirectURL := fmt.Sprintf("%s?%s", redirectURI, redirectParams.Encode())
 
 		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
@@ -175,18 +181,18 @@ func newAPI(p provider, conf *config, sessionStore sessionStore) http.Handler {
 		}
 
 		authzCode := r.FormValue(queryParamAuthorizationCode)
-		tx, tokens, ok := sessionStore.retrieve(authzCode)
+		s, ok := sessionStore.retrieve(authzCode)
 		if !ok {
 			http.Error(w, "Authorization code expired", http.StatusBadRequest)
 			return
 		}
 
-		if tx.Get(queryParamCodeChallenge) != pkceS256Challenge(r.FormValue(queryParamCodeVerifier)) {
+		if s.tx.clientParams.codeChallenge != pkceS256Challenge(r.FormValue(queryParamCodeVerifier)) {
 			http.Error(w, "PKCE failed", http.StatusBadRequest)
 			return
 		}
 
-		respondJSON(w, http.StatusOK, tokens)
+		respondJSON(w, http.StatusOK, s.tokens)
 	})
 
 	return mux

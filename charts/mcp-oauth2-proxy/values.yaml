@@ -6,7 +6,10 @@ provider:
   name: "" # defaults to google
   clientID: ""
   clientSecret: ""
-  allowedEmailDomains: []
+  allowedEmailDomains: [] # list of Go regular expressions
+
+proxy:
+  allowedRedirectURLs: [] # list of Go regular expressions
 
 server:
   cors: false

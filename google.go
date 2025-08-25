@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
@@ -105,12 +104,7 @@ func (g *googleProvider) verifyClaims(getClaims func(any) error) error {
 		return fmt.Errorf("google email '%s' is not verified", email)
 	}
 
-	if len(g.AllowedEmailDomains) > 0 {
-		for _, domain := range g.AllowedEmailDomains {
-			if strings.HasSuffix(email, "@"+domain) {
-				return nil
-			}
-		}
+	if !g.validateEmailDomain(email) {
 		return fmt.Errorf("the domain of the email '%s' is not allowed", email)
 	}
 

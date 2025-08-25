@@ -27,7 +27,7 @@ func getAndDeleteStateAndCheckCSRF(w http.ResponseWriter, r *http.Request) (stri
 	// Get state.
 	c, err := r.Cookie(stateCookieName)
 	if err != nil {
-		return "", fmt.Errorf("authentication expired")
+		return "", fmt.Errorf("expired")
 	}
 
 	// Delete state.
@@ -41,7 +41,7 @@ func getAndDeleteStateAndCheckCSRF(w http.ResponseWriter, r *http.Request) (stri
 	cookieState := c.Value
 	queryState := state(r)
 	if cookieState != queryState {
-		return "", fmt.Errorf("CSRF token mismatch")
+		return "", fmt.Errorf("mismatch")
 	}
 
 	return cookieState, nil
