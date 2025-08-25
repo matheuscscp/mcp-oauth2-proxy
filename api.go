@@ -249,10 +249,5 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 		respondJSON(w, http.StatusOK, s.outcome)
 	})
 
-	var api http.Handler = mux
-	if conf.Server.CORS {
-		api = handleCORS(api)
-	}
-
-	return api
+	return mux
 }
