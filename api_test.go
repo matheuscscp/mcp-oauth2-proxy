@@ -86,29 +86,6 @@ func (m *mockSessionStore) retrieveTransaction(key string) (*transaction, bool) 
 	return m.sessionStore.retrieveTransaction(key)
 }
 
-// callCountingSessionStore counts store calls and fails after a threshold
-type callCountingSessionStore struct {
-	sessionStore
-	callCount int
-	failAfter int
-}
-
-func (c *callCountingSessionStore) store(s *session) (string, error) {
-	c.callCount++
-	if c.callCount > c.failAfter {
-		return "", errors.New("session store failure in callback")
-	}
-	return c.sessionStore.store(s)
-}
-
-func (c *callCountingSessionStore) storeTransaction(tx *transaction) (string, error) {
-	c.callCount++
-	if c.callCount > c.failAfter {
-		return "", errors.New("session store failure in callback")
-	}
-	return c.sessionStore.storeTransaction(tx)
-}
-
 func newTestConfig() *config {
 	return &config{
 		Provider: providerConfig{
@@ -119,6 +96,56 @@ func newTestConfig() *config {
 			Addr: "localhost:8080",
 		},
 	}
+}
+
+func compileRegexList(in []string, out *[]*regexp.Regexp) error {
+	for _, s := range in {
+		r, err := regexp.Compile(s)
+		if err != nil {
+			return fmt.Errorf("failed to compile regex '%s': %w", s, err)
+		}
+		*out = append(*out, r)
+	}
+	return nil
+}
+
+func setupConfig(g *WithT, conf *config) *config {
+	if conf == nil {
+		return newTestConfig()
+	}
+	if err := compileRegexList(conf.Proxy.AllowedRedirectURLs, &conf.Proxy.regexAllowedRedirectURLs); err != nil {
+		g.Expect(err).ToNot(HaveOccurred())
+	}
+	return conf
+}
+
+func parseJSONResponse(g *WithT, body []byte) map[string]any {
+	var response map[string]any
+	err := json.Unmarshal(body, &response)
+	g.Expect(err).ToNot(HaveOccurred())
+	return response
+}
+
+func newTestTransaction() *transaction {
+	return &transaction{
+		clientParams: transactionClientParams{
+			codeChallenge: pkceS256Challenge("test-verifier"),
+			redirectURL:   "https://example.com/callback",
+			state:         "test-state",
+		},
+		codeVerifier: "test-verifier",
+	}
+}
+
+func newMockTokenServer() *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]any{
+			"access_token": "test-access-token",
+			"token_type":   "Bearer",
+		})
+	}))
 }
 
 func TestAuthenticate(t *testing.T) {
@@ -195,9 +222,7 @@ func TestOAuthProtectedResource(t *testing.T) {
 	g.Expect(rec.Code).To(Equal(http.StatusOK))
 	g.Expect(rec.Header().Get("Content-Type")).To(Equal("application/json"))
 
-	var response map[string]any
-	err := json.Unmarshal(rec.Body.Bytes(), &response)
-	g.Expect(err).ToNot(HaveOccurred())
+	response := parseJSONResponse(g, rec.Body.Bytes())
 
 	authServers, ok := response["authorization_servers"].([]any)
 	g.Expect(ok).To(BeTrue())
@@ -228,9 +253,7 @@ func TestOAuthAuthorizationServer(t *testing.T) {
 	g.Expect(rec.Code).To(Equal(http.StatusOK))
 	g.Expect(rec.Header().Get("Content-Type")).To(Equal("application/json"))
 
-	var response map[string]any
-	err := json.Unmarshal(rec.Body.Bytes(), &response)
-	g.Expect(err).ToNot(HaveOccurred())
+	response := parseJSONResponse(g, rec.Body.Bytes())
 
 	g.Expect(response["issuer"]).To(Equal("https://example.com"))
 	g.Expect(response["authorization_endpoint"]).To(Equal("https://example.com" + pathAuthorize))
@@ -301,26 +324,7 @@ func TestRegister(t *testing.T) {
 			g := NewWithT(t)
 
 			mockProv := &mockProvider{}
-			conf := tt.config
-			if conf == nil {
-				conf = newTestConfig()
-			} else {
-				// Compile regex patterns for custom config
-				buildRegexList := func(in []string, out *[]*regexp.Regexp) error {
-					for _, s := range in {
-						r, err := regexp.Compile(s)
-						if err != nil {
-							return fmt.Errorf("failed to compile regex '%s': %w", s, err)
-						}
-						*out = append(*out, r)
-					}
-					return nil
-				}
-
-				if err := buildRegexList(conf.Proxy.AllowedRedirectURLs, &conf.Proxy.regexAllowedRedirectURLs); err != nil {
-					g.Expect(err).ToNot(HaveOccurred())
-				}
-			}
+			conf := setupConfig(g, tt.config)
 			sessionStore := newMemorySessionStore()
 
 			api := newAPI(mockProv, &conf.Proxy, sessionStore)
@@ -334,9 +338,7 @@ func TestRegister(t *testing.T) {
 			g.Expect(rec.Code).To(Equal(tt.expectedStatus))
 
 			if tt.checkResponse {
-				var response map[string]any
-				err := json.Unmarshal(rec.Body.Bytes(), &response)
-				g.Expect(err).ToNot(HaveOccurred())
+				response := parseJSONResponse(g, rec.Body.Bytes())
 
 				g.Expect(response["client_id"]).To(Equal("mcp-oauth2-proxy"))
 				g.Expect(response["token_endpoint_auth_method"]).To(Equal(authorizationServerTokenEndpointAuthMethod))
@@ -429,26 +431,7 @@ func TestAuthorize(t *testing.T) {
 			}
 
 			mockProv := &mockProvider{}
-			conf := tt.config
-			if conf == nil {
-				conf = newTestConfig()
-			} else {
-				// Compile regex patterns for custom config
-				buildRegexList := func(in []string, out *[]*regexp.Regexp) error {
-					for _, s := range in {
-						r, err := regexp.Compile(s)
-						if err != nil {
-							return fmt.Errorf("failed to compile regex '%s': %w", s, err)
-						}
-						*out = append(*out, r)
-					}
-					return nil
-				}
-
-				if err := buildRegexList(conf.Proxy.AllowedRedirectURLs, &conf.Proxy.regexAllowedRedirectURLs); err != nil {
-					g.Expect(err).ToNot(HaveOccurred())
-				}
-			}
+			conf := setupConfig(g, tt.config)
 			sessionStore := tt.sessionStore
 			if sessionStore == nil {
 				sessionStore = newMemorySessionStore()
@@ -475,17 +458,18 @@ func TestAuthorize(t *testing.T) {
 
 func TestCallback(t *testing.T) {
 	tests := []struct {
-		name           string
-		setupSession   bool
-		setCookie      bool
-		queryParams    string
-		tokens         any
-		exchangeError  error
-		verifyError    error
-		expectedStatus int
-		sessionStore   sessionStore
-		csrfMismatch   bool
-		retrieveError  bool
+		name             string
+		setupSession     bool
+		setCookie        bool
+		queryParams      string
+		tokens           any
+		exchangeError    error
+		verifyError      error
+		expectedStatus   int
+		sessionStore     sessionStore
+		csrfMismatch     bool
+		retrieveError    bool
+		needsTokenServer bool
 	}{
 		{
 			name:           "missing CSRF cookie",
@@ -518,13 +502,14 @@ func TestCallback(t *testing.T) {
 			retrieveError:  true,
 		},
 		{
-			name:           "session store error in callback",
-			setupSession:   true,
-			setCookie:      true,
-			queryParams:    "code=auth-code&state=SESSION_KEY_PLACEHOLDER",
-			tokens:         map[string]string{"access_token": "token"},
-			expectedStatus: http.StatusInternalServerError,
-			sessionStore:   &callCountingSessionStore{sessionStore: newMemorySessionStore(), callCount: 0, failAfter: 0},
+			name:             "session store error in callback",
+			setupSession:     true,
+			setCookie:        true,
+			queryParams:      "code=auth-code&state=SESSION_KEY_PLACEHOLDER",
+			tokens:           map[string]string{"access_token": "token"},
+			expectedStatus:   http.StatusInternalServerError,
+			sessionStore:     &mockSessionStore{sessionStore: newMemorySessionStore(), storeError: errors.New("session store failure in callback")},
+			needsTokenServer: true,
 		},
 		{
 			name:           "token exchange failure",
@@ -535,20 +520,22 @@ func TestCallback(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:           "token verification failure",
-			setupSession:   true,
-			setCookie:      true,
-			queryParams:    "code=auth-code&state=SESSION_KEY_PLACEHOLDER",
-			verifyError:    errors.New("verify failed"),
-			expectedStatus: http.StatusBadRequest,
+			name:             "token verification failure",
+			setupSession:     true,
+			setCookie:        true,
+			queryParams:      "code=auth-code&state=SESSION_KEY_PLACEHOLDER",
+			verifyError:      errors.New("verify failed"),
+			expectedStatus:   http.StatusBadRequest,
+			needsTokenServer: true,
 		},
 		{
-			name:           "successful callback",
-			setupSession:   true,
-			setCookie:      true,
-			queryParams:    "code=auth-code&state=SESSION_KEY_PLACEHOLDER",
-			tokens:         map[string]string{"access_token": "token"},
-			expectedStatus: http.StatusSeeOther,
+			name:             "successful callback",
+			setupSession:     true,
+			setCookie:        true,
+			queryParams:      "code=auth-code&state=SESSION_KEY_PLACEHOLDER",
+			tokens:           map[string]string{"access_token": "token"},
+			expectedStatus:   http.StatusSeeOther,
+			needsTokenServer: true,
 		},
 	}
 
@@ -579,16 +566,9 @@ func TestCallback(t *testing.T) {
 						},
 					}
 				}
-			} else if tt.name == "successful callback" || tt.name == "session store error in callback" || tt.name == "token verification failure" {
+			} else if tt.needsTokenServer {
 				// Use httptest server for successful token exchange
-				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusOK)
-					json.NewEncoder(w).Encode(map[string]any{
-						"access_token": "test-access-token",
-						"token_type":   "Bearer",
-					})
-				}))
+				server := newMockTokenServer()
 				defer server.Close()
 
 				mockProv.oauth2ConfigFunc = func(r *http.Request) *oauth2.Config {
@@ -604,50 +584,17 @@ func TestCallback(t *testing.T) {
 			}
 
 			conf := newTestConfig()
-			var baseStore sessionStore
 			sessionStore := tt.sessionStore
-
-			// Handle special case for session store error in callback
-			if tt.name == "session store error in callback" {
-				baseStore = newMemorySessionStore()
-				sessionStore = &callCountingSessionStore{
-					sessionStore: baseStore,
-					callCount:    0,
-					failAfter:    0, // Fail on first call from the counting store
-				}
-			} else {
-				if sessionStore == nil {
-					sessionStore = newMemorySessionStore()
-				}
-				baseStore = sessionStore
+			if sessionStore == nil {
+				sessionStore = newMemorySessionStore()
 			}
 
 			api := newAPI(mockProv, &conf.Proxy, sessionStore)
 
 			// For successful callback test, we need the session key to match the cookie value
 			var sessionKey string
-			if tt.name == "session store error in callback" {
-				// For session store error test, we need to set up session in base store first
-				tx := &transaction{
-					clientParams: transactionClientParams{
-						codeChallenge: pkceS256Challenge("test-verifier"),
-						redirectURL:   "https://example.com/callback",
-						state:         "test-state",
-					},
-					codeVerifier: "test-verifier",
-				}
-				var err error
-				sessionKey, err = baseStore.storeTransaction(tx)
-				g.Expect(err).ToNot(HaveOccurred())
-			} else if tt.setupSession {
-				tx := &transaction{
-					clientParams: transactionClientParams{
-						codeChallenge: pkceS256Challenge("test-verifier"),
-						redirectURL:   "https://example.com/callback",
-						state:         "test-state",
-					},
-					codeVerifier: "test-verifier",
-				}
+			if tt.setupSession {
+				tx := newTestTransaction()
 				var err error
 				sessionKey, err = sessionStore.storeTransaction(tx)
 				g.Expect(err).ToNot(HaveOccurred())
@@ -725,14 +672,7 @@ func TestToken(t *testing.T) {
 
 			var authzCode string
 			if tt.setupSession {
-				tx := &transaction{
-					clientParams: transactionClientParams{
-						codeChallenge: pkceS256Challenge("test-verifier"),
-						redirectURL:   "https://example.com/callback",
-						state:         "test-state",
-					},
-					codeVerifier: "test-verifier",
-				}
+				tx := newTestTransaction()
 				tokens := map[string]string{"access_token": "test-token"}
 				s := &session{tx: tx, tokens: tokens}
 				var err error
@@ -754,9 +694,7 @@ func TestToken(t *testing.T) {
 			g.Expect(rec.Code).To(Equal(tt.expectedStatus))
 
 			if tt.checkResponse {
-				var response map[string]any
-				err := json.Unmarshal(rec.Body.Bytes(), &response)
-				g.Expect(err).ToNot(HaveOccurred())
+				response := parseJSONResponse(g, rec.Body.Bytes())
 				g.Expect(response["access_token"]).To(Equal("test-token"))
 			}
 		})
