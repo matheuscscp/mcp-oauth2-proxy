@@ -237,6 +237,10 @@ func TestOAuthAuthorizationServer(t *testing.T) {
 	g.Expect(response["token_endpoint"]).To(Equal("https://example.com" + pathToken))
 	g.Expect(response["registration_endpoint"]).To(Equal("https://example.com" + pathRegister))
 	g.Expect(response["scopes_supported"]).To(Equal([]any{"openid", "profile"}))
+	g.Expect(response["code_challenge_methods_supported"]).To(Equal([]any{authorizationServerCodeChallengeMethod}))
+	g.Expect(response["grant_types_supported"]).To(Equal([]any{authorizationServerGrantType}))
+	g.Expect(response["response_modes_supported"]).To(Equal([]any{authorizationServerResponseMode}))
+	g.Expect(response["response_types_supported"]).To(Equal([]any{authorizationServerResponseType}))
 	g.Expect(response["token_endpoint_auth_methods_supported"]).To(Equal([]any{authorizationServerTokenEndpointAuthMethod}))
 }
 
