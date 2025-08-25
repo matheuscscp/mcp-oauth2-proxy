@@ -27,10 +27,16 @@ func getProviderAndConfig() (provider, *config) {
 	if err != nil {
 		logrus.WithError(err).Fatal("failed to create config")
 	}
+
+	redactedConfig := *conf
+	redactedConfig.Provider.ClientSecret = "redacted"
+	logrus.WithField("config", redactedConfig).Info("config loaded")
+
 	p, err := newProvider(conf)
 	if err != nil {
 		logrus.WithError(err).Fatal("failed to create provider")
 	}
+
 	return p, conf
 }
 
@@ -42,10 +48,6 @@ func main() {
 	p, conf := getProviderAndConfig()
 	api := newAPI(iss, p, conf, newMemorySessionStore(), time.Now)
 
-	addr := conf.Server.Addr
-	if addr == "" {
-		addr = ":8080"
-	}
 	if conf.Server.CORS {
 		api = handleCORS(api)
 	}
@@ -57,7 +59,7 @@ func main() {
 		Help: "Duration of HTTP requests in seconds",
 	}, []string{"host", "method", "path", "status"})
 	s := &http.Server{
-		Addr: addr,
+		Addr: conf.Server.Addr,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			t := time.Now()
 			sr := &statusRecorder{ResponseWriter: w}
@@ -86,24 +88,22 @@ func main() {
 		}),
 	}
 
-	l := logrus.WithField("serverAddr", addr)
-
 	go func() {
 		if err := s.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			l.WithError(err).Fatal("failed to start server")
+			logrus.WithError(err).Fatal("failed to start server")
 		}
 	}()
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := s.Shutdown(ctx); err != nil {
-			l.WithError(err).Error("failed to shut down server")
+			logrus.WithError(err).Error("failed to shut down server")
 		} else {
-			l.Info("server shut down successfully")
+			logrus.Info("server shut down successfully")
 		}
 	}()
 
-	l.Info("server started, waiting for signal")
+	logrus.Info("server started, waiting for signal")
 	<-signalReceived
-	l.Info("signal received, shutting down server")
+	logrus.Info("signal received, shutting down server")
 }
