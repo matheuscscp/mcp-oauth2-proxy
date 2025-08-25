@@ -20,31 +20,31 @@ flowchart TB
     MCP2[📦 MCP Server 2<br/>host: server2.example.com]
     
     %% User OAuth Flow with IdP
-    User -.->|"1. Browser OAuth2+PKCE<br/>Authorization Code Flow"| IdP
-    IdP -.->|"User Authentication"| User
+    User -.-> IdP
+    IdP -.-> User
     
     %% AI Client OAuth Flow with Proxy
-    AI -->|"2. OAuth2+PKCE Flow<br/>Authorization Code"| RP
-    RP -->|"Routes OAuth paths:<br/>/authenticate, /.well-known/*<br/>/register, /authorize<br/>/callback, /token"| Proxy
+    AI --> RP
+    RP --> Proxy
     
     %% Proxy acts as Authorization Server
-    Proxy -.->|"3. Redirect to browser<br/>for user consent"| User
-    User -.->|"4. User completes<br/>OAuth with IdP"| Proxy
-    Proxy -.->|"5. Issues JWT token<br/>to AI Client"| AI
+    Proxy -.-> User
+    User -.-> Proxy
+    Proxy -.-> AI
     
     %% MCP Server Access
-    AI -->|"6. Bearer JWT token"| RP
-    RP -->|"Routes by Host header<br/>to appropriate MCP server"| MCP1
-    RP -->|"Routes by Host header<br/>to appropriate MCP server"| MCP2
+    AI --> RP
+    RP --> MCP1
+    RP --> MCP2
     
     %% Authentication Check
-    RP -->|"7. /authenticate<br/>Bearer token validation"| Proxy
-    Proxy -->|"8. X-Auth-Request-Access-Token<br/>if valid (200) or<br/>WWW-Authenticate if invalid (401)"| RP
-    RP -->|"9. Forward request with<br/>validated token or<br/>return 401 to AI Client"| MCP1
-    RP -->|"9. Forward request with<br/>validated token or<br/>return 401 to AI Client"| MCP2
+    RP --> Proxy
+    Proxy --> RP
+    RP --> MCP1
+    RP --> MCP2
     
     %% Backend IdP Communication
-    Proxy -.->|"OAuth2 token exchange<br/>User verification"| IdP
+    Proxy -.-> IdP
     
     %% Styling
     classDef userStyle fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
@@ -73,6 +73,29 @@ flowchart TB
 7. **Token Validation**: For each MCP request, the reverse proxy calls `/authenticate` to validate the bearer token
 8. **Secure Token Passing**: mcp-oauth2-proxy validates the token and returns it via `X-Auth-Request-Access-Token` header if valid
 9. **MCP Server Access**: Reverse proxy forwards the request to the MCP server with the validated token
+
+### API Endpoints
+
+mcp-oauth2-proxy exposes the following HTTP endpoints:
+
+#### Authentication Endpoint
+- **`/authenticate`** - Token validation endpoint used by reverse proxy
+  - **Input Headers**:
+    - `Authorization: Bearer <jwt-token>` - JWT token issued by mcp-oauth2-proxy
+  - **Output Headers** (on success - HTTP 200):
+    - `X-Auth-Request-Access-Token: <jwt-token>` - Validated JWT token for forwarding
+  - **Output Headers** (on failure - HTTP 401):
+    - `WWW-Authenticate: Bearer realm="mcp-oauth2-proxy", resource_metadata="<base-url>/.well-known/oauth-protected-resource"`
+
+#### OAuth 2.0 Discovery Endpoints
+- **`/.well-known/oauth-protected-resource`** - OAuth 2.0 Protected Resource metadata
+- **`/.well-known/oauth-authorization-server`** - OAuth 2.0 Authorization Server metadata
+
+#### OAuth 2.0 Flow Endpoints
+- **`/register`** - OAuth 2.0 Dynamic Client Registration
+- **`/authorize`** - OAuth 2.0 Authorization endpoint (PKCE required)
+- **`/callback`** - OAuth 2.0 Authorization callback
+- **`/token`** - OAuth 2.0 Token exchange endpoint
 
 ### Key Features
 
@@ -119,7 +142,7 @@ helm install mcp-oauth2-proxy oci://ghcr.io/matheuscscp/mcp-oauth2-proxy/charts/
   --set provider.clientSecret=your-client-secret \
   --set ingress.enabled=true \
   --set ingress.className=nginx \
-  --set 'ingress.hosts[0]=auth.example.com'
+  --set 'ingress.hosts[0]=my-mcp.example.com'
 ```
 
 #### MCP Server Ingress
@@ -132,7 +155,7 @@ metadata:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     # Only the auth-url annotation is needed for mcp-oauth2-proxy integration
-    nginx.ingress.kubernetes.io/auth-url: https://my-mcp.example.com/authenticate
+    nginx.ingress.kubernetes.io/auth-url: https://$host/authenticate
 spec:
   ingressClassName: nginx
   tls:
