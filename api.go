@@ -114,7 +114,7 @@ func newAPI(p provider, conf *proxyConfig, sessionStore sessionStore) http.Handl
 		l := fromRequest(r)
 
 		if r.URL.Query().Get(queryParamCodeChallengeMethod) != authorizationServerCodeChallengeMethod {
-			http.Error(w, "Unsupported code_challenge_method", http.StatusBadRequest)
+			http.Error(w, fmt.Sprintf("Unsupported %s", queryParamCodeChallengeMethod), http.StatusBadRequest)
 			return
 		}
 
