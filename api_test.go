@@ -246,10 +246,12 @@ func TestOAuthAuthorizationServer(t *testing.T) {
 
 func TestRegister(t *testing.T) {
 	tests := []struct {
-		name           string
-		requestBody    string
-		expectedStatus int
-		checkResponse  bool
+		name               string
+		requestBody        string
+		expectedStatus     int
+		checkResponse      bool
+		config             *config
+		expectRedirectURIs bool
 	}{
 		{
 			name:           "invalid JSON",
@@ -257,15 +259,40 @@ func TestRegister(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:           "missing redirect_uris",
-			requestBody:    `{"client_name": "test"}`,
+			name:           "empty redirect URI",
+			requestBody:    `{"redirect_uris": [""]}`,
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:           "valid registration",
-			requestBody:    `{"redirect_uris": ["https://example.com/callback"]}`,
-			expectedStatus: http.StatusCreated,
-			checkResponse:  true,
+			name:           "invalid redirect URI not in allow list",
+			requestBody:    `{"redirect_uris": ["https://evil.com/callback"]}`,
+			expectedStatus: http.StatusBadRequest,
+			config: &config{
+				Provider: providerConfig{
+					ClientID:     "test-client-id",
+					ClientSecret: "test-client-secret",
+				},
+				Proxy: proxyConfig{
+					AllowedRedirectURLs: []string{"^https://example\\.com/.*"},
+				},
+				Server: serverConfig{
+					Addr: "localhost:8080",
+				},
+			},
+		},
+		{
+			name:               "valid registration without redirect URIs",
+			requestBody:        `{"client_name": "test-client"}`,
+			expectedStatus:     http.StatusCreated,
+			checkResponse:      true,
+			expectRedirectURIs: false,
+		},
+		{
+			name:               "valid registration with redirect URIs",
+			requestBody:        `{"redirect_uris": ["https://example.com/callback"], "client_name": "test-client"}`,
+			expectedStatus:     http.StatusCreated,
+			checkResponse:      true,
+			expectRedirectURIs: true,
 		},
 	}
 
@@ -274,7 +301,26 @@ func TestRegister(t *testing.T) {
 			g := NewWithT(t)
 
 			mockProv := &mockProvider{}
-			conf := newTestConfig()
+			conf := tt.config
+			if conf == nil {
+				conf = newTestConfig()
+			} else {
+				// Compile regex patterns for custom config
+				buildRegexList := func(in []string, out *[]*regexp.Regexp) error {
+					for _, s := range in {
+						r, err := regexp.Compile(s)
+						if err != nil {
+							return fmt.Errorf("failed to compile regex '%s': %w", s, err)
+						}
+						*out = append(*out, r)
+					}
+					return nil
+				}
+
+				if err := buildRegexList(conf.Proxy.AllowedRedirectURLs, &conf.Proxy.regexAllowedRedirectURLs); err != nil {
+					g.Expect(err).ToNot(HaveOccurred())
+				}
+			}
 			sessionStore := newMemorySessionStore()
 
 			api := newAPI(mockProv, &conf.Proxy, sessionStore)
@@ -294,7 +340,12 @@ func TestRegister(t *testing.T) {
 
 				g.Expect(response["client_id"]).To(Equal("mcp-oauth2-proxy"))
 				g.Expect(response["token_endpoint_auth_method"]).To(Equal(authorizationServerTokenEndpointAuthMethod))
-				g.Expect(response["redirect_uris"]).To(Equal([]any{"https://example.com/callback"}))
+
+				if tt.expectRedirectURIs {
+					g.Expect(response["redirect_uris"]).To(Equal([]any{"https://example.com/callback"}))
+				} else {
+					g.Expect(response["redirect_uris"]).To(BeNil())
+				}
 			}
 		})
 	}

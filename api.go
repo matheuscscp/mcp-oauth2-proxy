@@ -68,22 +68,46 @@ func newAPI(p provider, conf *proxyConfig, sessionStore sessionStore) http.Handl
 	})
 
 	mux.HandleFunc(pathRegister, func(w http.ResponseWriter, r *http.Request) {
-		var m map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
-			fromRequest(r).WithError(err).Error("failed to parse request body as JSON")
+		l := fromRequest(r)
+
+		var req struct {
+			RedirectURIs            []string `json:"redirect_uris,omitempty"`
+			TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
+			GrantTypes              []string `json:"grant_types,omitempty"`
+			ResponseTypes           []string `json:"response_types,omitempty"`
+			ClientName              string   `json:"client_name,omitempty"`
+			ClientURI               string   `json:"client_uri,omitempty"`
+			LogoURI                 string   `json:"logo_uri,omitempty"`
+			Scope                   string   `json:"scope,omitempty"`
+			ToSURI                  string   `json:"tos_uri,omitempty"`
+			PolicyURI               string   `json:"policy_uri,omitempty"`
+			JWKSURI                 string   `json:"jwks_uri,omitempty"`
+			SoftwareID              string   `json:"software_id,omitempty"`
+			SoftwareVersion         string   `json:"software_version,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			l.WithError(err).Error("failed to parse request body as JSON")
 			http.Error(w, "Failed to parse request body as JSON", http.StatusBadRequest)
 			return
 		}
-		redirectURIs, ok := m["redirect_uris"]
-		if !ok {
-			http.Error(w, "Missing redirect_uris", http.StatusBadRequest)
-			return
+
+		for _, uri := range req.RedirectURIs {
+			if !conf.validateRedirectURL(uri) {
+				http.Error(w, fmt.Sprintf("Invalid redirect URI '%s'", uri), http.StatusBadRequest)
+				return
+			}
 		}
-		respondJSON(w, http.StatusCreated, map[string]any{
+
+		resp := map[string]any{
 			"client_id":                  proxyClientID,
 			"token_endpoint_auth_method": authorizationServerTokenEndpointAuthMethod,
-			"redirect_uris":              redirectURIs,
-		})
+		}
+		if len(req.RedirectURIs) > 0 {
+			resp["redirect_uris"] = req.RedirectURIs
+		}
+		respondJSON(w, http.StatusCreated, resp)
+
+		l.WithField("registration", req).Info("client registered")
 	})
 
 	mux.HandleFunc(pathAuthorize, func(w http.ResponseWriter, r *http.Request) {

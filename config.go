@@ -98,6 +98,9 @@ func (p *providerConfig) validateEmailDomain(email string) bool {
 }
 
 func (p *proxyConfig) validateRedirectURL(url string) bool {
+	if url == "" {
+		return false
+	}
 	if len(p.regexAllowedRedirectURLs) == 0 {
 		return true
 	}
