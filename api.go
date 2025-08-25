@@ -26,16 +26,19 @@ const (
 	pathToken                    = "/token"
 )
 
-func newAPI(ti *tokenIssuer, p provider, conf *proxyConfig, sessionStore sessionStore, nowFunc func() time.Time) http.Handler {
+func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore, nowFunc func() time.Time) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc(pathAuthenticate, func(w http.ResponseWriter, r *http.Request) {
 		token := bearerToken(r)
+
 		if !ti.verify(token, nowFunc()) {
 			respondWWWAuthenticate(w, r)
 			return
 		}
+
 		w.Header().Set(responseHeaderAccessToken, token)
+
 		fromRequest(r).Debug("request authenticated")
 	})
 
@@ -88,7 +91,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *proxyConfig, sessionStore session
 		}
 
 		for _, uri := range req.RedirectURIs {
-			if !conf.validateRedirectURL(uri) {
+			if !conf.Proxy.validateRedirectURL(uri) {
 				http.Error(w, fmt.Sprintf("Invalid redirect URI '%s'", uri), http.StatusBadRequest)
 				return
 			}
@@ -123,7 +126,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *proxyConfig, sessionStore session
 		}
 		codeChallenge := pkceS256Challenge(codeVerifier)
 
-		tx, err := newTransaction(conf, r, codeVerifier)
+		tx, err := newTransaction(&conf.Proxy, r, codeVerifier)
 		if err != nil {
 			l.WithError(err).Error("invalid transaction")
 			http.Error(w, fmt.Sprintf("Invalid parameters: %v", err), http.StatusBadRequest)
@@ -136,12 +139,15 @@ func newAPI(ti *tokenIssuer, p provider, conf *proxyConfig, sessionStore session
 			http.Error(w, "Failed to generate state", http.StatusInternalServerError)
 			return
 		}
-		setState(w, state)
 
-		url := p.oauth2Config(r).AuthCodeURL(state,
+		// Build authorization code URL.
+		oauth2Conf := oauth2Config(r, p, conf)
+		authCodeURL := oauth2Conf.AuthCodeURL(state,
 			oauth2.SetAuthURLParam(queryParamCodeChallenge, codeChallenge),
 			oauth2.SetAuthURLParam(queryParamCodeChallengeMethod, authorizationServerCodeChallengeMethod))
-		http.Redirect(w, r, url, http.StatusSeeOther)
+
+		setState(w, state)
+		http.Redirect(w, r, authCodeURL, http.StatusSeeOther)
 	})
 
 	mux.HandleFunc(pathCallback, func(w http.ResponseWriter, r *http.Request) {
@@ -160,7 +166,10 @@ func newAPI(ti *tokenIssuer, p provider, conf *proxyConfig, sessionStore session
 			return
 		}
 
-		oauth2Token, err := p.oauth2Config(r).Exchange(r.Context(), authorizationCode(r),
+		// Exchange authorization code for tokens.
+		oauth2Conf := oauth2Config(r, p, conf)
+		oauth2Conf.ClientSecret = conf.Provider.ClientSecret
+		oauth2Token, err := oauth2Conf.Exchange(r.Context(), authorizationCode(r),
 			oauth2.SetAuthURLParam(queryParamCodeVerifier, tx.codeVerifier))
 		if err != nil {
 			l.WithError(err).Error("failed to exchange authorization code for tokens")
@@ -168,16 +177,16 @@ func newAPI(ti *tokenIssuer, p provider, conf *proxyConfig, sessionStore session
 			return
 		}
 
-		_, err = p.verifyAndRepackExchangedTokens(r.Context(), oauth2Token)
+		user, err := p.verifyUser(r.Context(), oauth2.StaticTokenSource(oauth2Token))
 		if err != nil {
 			l.WithError(err).Error("failed to verify user")
 			http.Error(w, "Failed to verify user", http.StatusBadRequest)
 			return
 		}
 
-		// Issue an access token.
+		// Issue an access token for the proxy realm.
 		iss := baseURL(r)
-		sub := "<user>" // FIXME: use user from provider
+		sub := user
 		aud := mcpOAuth2Proxy
 		now := nowFunc()
 		accessToken, exp, err := ti.issue(iss, sub, aud, now)
@@ -224,6 +233,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *proxyConfig, sessionStore session
 		}
 
 		authzCode := r.FormValue(queryParamAuthorizationCode)
+
 		s, ok := sessionStore.retrieve(authzCode)
 		if !ok {
 			http.Error(w, "Authorization code expired", http.StatusBadRequest)

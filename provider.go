@@ -3,21 +3,19 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
 
 	"golang.org/x/oauth2"
 )
 
 type provider interface {
-	oauth2Config(r *http.Request) *oauth2.Config
-	verifyBearerToken(ctx context.Context, bearerToken string) error
-	verifyAndRepackExchangedTokens(ctx context.Context, token *oauth2.Token) (any, error)
+	oauth2Config() *oauth2.Config
+	verifyUser(ctx context.Context, ts oauth2.TokenSource) (string, error)
 }
 
 func newProvider(conf *config) (provider, error) {
 	switch conf.Provider.Name {
 	case "", "google":
-		return &googleProvider{&conf.Provider}, nil
+		return &googleProvider{conf.Provider.validateEmailDomain}, nil
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", conf.Provider.Name)
 	}

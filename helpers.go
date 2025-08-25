@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/sirupsen/logrus"
+	"golang.org/x/oauth2"
 )
 
 func baseURL(r *http.Request) string {
@@ -27,6 +28,13 @@ func state(r *http.Request) string {
 
 func bearerToken(r *http.Request) string {
 	return strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+}
+
+func oauth2Config(r *http.Request, p provider, conf *config) *oauth2.Config {
+	c := p.oauth2Config()
+	c.ClientID = conf.Provider.ClientID
+	c.RedirectURL = callbackURL(r)
+	return c
 }
 
 func respondWWWAuthenticate(w http.ResponseWriter, r *http.Request) {

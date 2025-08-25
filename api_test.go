@@ -15,24 +15,23 @@ import (
 	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	. "github.com/onsi/gomega"
 	"golang.org/x/oauth2"
 )
 
 // mockProvider implements the provider interface for testing
 type mockProvider struct {
-	oauth2ConfigFunc                  func(r *http.Request) *oauth2.Config
-	verifyAndRepackExchangedTokensRes any
-	verifyAndRepackExchangedTokensErr error
+	oauth2ConfigFunc func() *oauth2.Config
+	verifyUserResult string
+	verifyUserError  error
 }
 
-func (m *mockProvider) oauth2Config(r *http.Request) *oauth2.Config {
+func (m *mockProvider) oauth2Config() *oauth2.Config {
 	if m.oauth2ConfigFunc != nil {
-		return m.oauth2ConfigFunc(r)
+		return m.oauth2ConfigFunc()
 	}
 	return &oauth2.Config{
-		ClientID:    "test-client-id",
-		RedirectURL: callbackURL(r),
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  "https://example.com/auth",
 			TokenURL: "https://example.com/token",
@@ -40,13 +39,14 @@ func (m *mockProvider) oauth2Config(r *http.Request) *oauth2.Config {
 	}
 }
 
-func (m *mockProvider) verifyBearerToken(ctx context.Context, bearerToken string) error {
-	// This method is no longer used by the main code but still required by interface
-	return nil
-}
-
-func (m *mockProvider) verifyAndRepackExchangedTokens(ctx context.Context, token *oauth2.Token) (any, error) {
-	return m.verifyAndRepackExchangedTokensRes, m.verifyAndRepackExchangedTokensErr
+func (m *mockProvider) verifyUser(ctx context.Context, ts oauth2.TokenSource) (string, error) {
+	if m.verifyUserError != nil {
+		return "", m.verifyUserError
+	}
+	if m.verifyUserResult != "" {
+		return m.verifyUserResult, nil
+	}
+	return "test-user@example.com", nil
 }
 
 // mockSessionStore allows simulating sessionStore failures
@@ -191,6 +191,45 @@ func fixedTimeFunc() func() time.Time {
 	return func() time.Time { return fixedTime }
 }
 
+// parseJWT parses and validates a JWT token using the given public key
+func parseJWT(g *WithT, tokenString string, publicKey jwk.Key) jwt.Token {
+	token, err := jwt.Parse([]byte(tokenString), jwt.WithKey(issuerAlgorithm(), publicKey), jwt.WithValidate(true))
+	g.Expect(err).ToNot(HaveOccurred())
+	return token
+}
+
+// assertJWTClaims verifies standard JWT claims
+func assertJWTClaims(g *WithT, token jwt.Token, expectedIssuer, expectedSubject, expectedAudience string) {
+	issuer, ok := token.Issuer()
+	g.Expect(ok).To(BeTrue())
+	g.Expect(issuer).To(Equal(expectedIssuer))
+
+	subject, ok := token.Subject()
+	g.Expect(ok).To(BeTrue())
+	g.Expect(subject).To(Equal(expectedSubject))
+
+	audiences, ok := token.Audience()
+	g.Expect(ok).To(BeTrue())
+	g.Expect(audiences).To(HaveLen(1))
+	g.Expect(audiences[0]).To(Equal(expectedAudience))
+
+	exp, ok := token.Expiration()
+	g.Expect(ok).To(BeTrue())
+	g.Expect(exp).To(BeTemporally(">=", time.Now()))
+
+	nbf, ok := token.NotBefore()
+	g.Expect(ok).To(BeTrue())
+	g.Expect(nbf).To(BeTemporally("<=", time.Now().Add(time.Minute)))
+
+	iat, ok := token.IssuedAt()
+	g.Expect(ok).To(BeTrue())
+	g.Expect(iat).To(BeTemporally("<=", time.Now().Add(time.Minute)))
+
+	jti, ok := token.JwtID()
+	g.Expect(ok).To(BeTrue())
+	g.Expect(jti).ToNot(BeEmpty())
+}
+
 func newMockTokenServer() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -240,7 +279,7 @@ func TestAuthenticate(t *testing.T) {
 			conf := newTestConfig()
 			sessionStore := newMemorySessionStore()
 
-			api := newAPI(tokenIssuer, mockProv, &conf.Proxy, sessionStore, time.Now)
+			api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
 
 			req := httptest.NewRequest(http.MethodGet, pathAuthenticate, nil)
 			bearerToken := tt.bearerToken
@@ -262,7 +301,16 @@ func TestAuthenticate(t *testing.T) {
 				g.Expect(rec.Header().Get("WWW-Authenticate")).To(ContainSubstring("Bearer realm="))
 			}
 			if tt.expectedAccessToken {
+				// Assert access token header is set
 				g.Expect(rec.Header().Get(responseHeaderAccessToken)).To(Equal(bearerToken))
+
+				// Parse and validate JWT claims - use the same tokenIssuer's public keys
+				publicKeys := tokenIssuer.publicKeys(time.Now())
+				g.Expect(publicKeys).To(HaveLen(1))
+				token := parseJWT(g, bearerToken, publicKeys[0])
+
+				// Assert JWT claims
+				assertJWTClaims(g, token, "https://example.com", "test-user", "mcp-oauth2-proxy")
 			}
 		})
 	}
@@ -276,7 +324,7 @@ func TestOAuthProtectedResource(t *testing.T) {
 	conf := newTestConfig()
 	sessionStore := newMemorySessionStore()
 
-	api := newAPI(tokenIssuer, mockProv, &conf.Proxy, sessionStore, time.Now)
+	api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
 
 	req := httptest.NewRequest(http.MethodGet, pathOAuthProtectedResource, nil)
 	req.Host = "example.com"
@@ -306,7 +354,7 @@ func TestOAuthAuthorizationServer(t *testing.T) {
 	conf := newTestConfig()
 	sessionStore := newMemorySessionStore()
 
-	api := newAPI(tokenIssuer, mockProv, &conf.Proxy, sessionStore, time.Now)
+	api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
 
 	req := httptest.NewRequest(http.MethodGet, pathOAuthAuthorizationServer, nil)
 	req.Host = "example.com"
@@ -426,7 +474,7 @@ func TestRegister(t *testing.T) {
 			conf := setupConfig(g, tt.config)
 			sessionStore := newMemorySessionStore()
 
-			api := newAPI(tokenIssuer, mockProv, &conf.Proxy, sessionStore, time.Now)
+			api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
 
 			req := httptest.NewRequest(http.MethodPost, pathRegister, strings.NewReader(tt.requestBody))
 			req.Header.Set("Content-Type", "application/json")
@@ -545,7 +593,7 @@ func TestAuthorize(t *testing.T) {
 				sessionStore = newMemorySessionStore()
 			}
 
-			api := newAPI(tokenIssuer, mockProv, &conf.Proxy, sessionStore, time.Now)
+			api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
 
 			req := httptest.NewRequest(http.MethodGet, pathAuthorize+"?"+tt.queryParams, nil)
 			req.Host = "example.com"
@@ -663,8 +711,8 @@ func TestCallback(t *testing.T) {
 			g := NewWithT(t)
 
 			mockProv := &mockProvider{
-				verifyAndRepackExchangedTokensRes: tt.tokens,
-				verifyAndRepackExchangedTokensErr: tt.verifyError,
+				verifyUserResult: "test-user@example.com",
+				verifyUserError:  tt.verifyError,
 			}
 
 			// Mock the Exchange method by overriding oauth2ConfigFunc
@@ -675,10 +723,8 @@ func TestCallback(t *testing.T) {
 				}))
 				defer server.Close()
 
-				mockProv.oauth2ConfigFunc = func(r *http.Request) *oauth2.Config {
+				mockProv.oauth2ConfigFunc = func() *oauth2.Config {
 					return &oauth2.Config{
-						ClientID:    "test-client-id",
-						RedirectURL: callbackURL(r),
 						Endpoint: oauth2.Endpoint{
 							AuthURL:  "https://example.com/auth",
 							TokenURL: server.URL,
@@ -690,10 +736,8 @@ func TestCallback(t *testing.T) {
 				server := newMockTokenServer()
 				defer server.Close()
 
-				mockProv.oauth2ConfigFunc = func(r *http.Request) *oauth2.Config {
+				mockProv.oauth2ConfigFunc = func() *oauth2.Config {
 					return &oauth2.Config{
-						ClientID:    "test-client-id",
-						RedirectURL: callbackURL(r),
 						Endpoint: oauth2.Endpoint{
 							AuthURL:  "https://example.com/auth",
 							TokenURL: server.URL,
@@ -714,7 +758,7 @@ func TestCallback(t *testing.T) {
 				keySource = &mockPrivateKeySource{currentError: errors.New("key generation failed")}
 			}
 			tokenIssuer := newTestTokenIssuer(keySource)
-			api := newAPI(tokenIssuer, mockProv, &conf.Proxy, sessionStore, time.Now)
+			api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
 
 			// For successful callback test, we need the session key to match the cookie value
 			var sessionKey string
@@ -733,7 +777,7 @@ func TestCallback(t *testing.T) {
 						keySource = &mockPrivateKeySource{currentError: errors.New("key generation failed")}
 					}
 					tokenIssuer = newTestTokenIssuer(keySource)
-					api = newAPI(tokenIssuer, mockProv, &conf.Proxy, sessionStore, time.Now)
+					api = newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
 				}
 			} else {
 				sessionKey = "invalid-state"
@@ -795,24 +839,32 @@ func TestToken(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			tokenIssuer := newTestTokenIssuer(nil)
+			tokenIssuer, _, _ := newTestTokenIssuerWithSharedKeys()
 			mockProv := &mockProvider{}
 			conf := newTestConfig()
 			sessionStore := newMemorySessionStore()
 
-			api := newAPI(tokenIssuer, mockProv, &conf.Proxy, sessionStore, time.Now)
+			api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
 
 			var authzCode string
+			var jwtToken string
 			if tt.setupSession {
 				tx := newTestTransaction()
-				// Create outcome with JWT token structure
+
+				// Issue a real JWT token for this test
+				now := time.Now()
+				var exp time.Time
+				var err error
+				jwtToken, exp, err = tokenIssuer.issue("https://example.com", "test-user@example.com", "mcp-oauth2-proxy", now)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				// Create outcome with real JWT token
 				outcome := &oauth2.Token{
-					AccessToken: "test-jwt-token",
+					AccessToken: jwtToken,
 					TokenType:   "Bearer",
-					Expiry:      time.Now().Add(time.Hour),
+					Expiry:      exp,
 				}
 				s := &session{tx: tx, outcome: outcome}
-				var err error
 				authzCode, err = sessionStore.store(s)
 				g.Expect(err).ToNot(HaveOccurred())
 
@@ -832,8 +884,19 @@ func TestToken(t *testing.T) {
 
 			if tt.checkResponse {
 				response := parseJSONResponse(g, rec.Body.Bytes())
-				g.Expect(response["access_token"]).To(Equal("test-jwt-token"))
+
+				// Assert basic OAuth2 token response structure
+				g.Expect(response["access_token"]).To(Equal(jwtToken))
 				g.Expect(response["token_type"]).To(Equal("Bearer"))
+				g.Expect(response["expiry"]).ToNot(BeNil())
+
+				// Parse and validate JWT claims - use the same tokenIssuer's public keys
+				publicKeys := tokenIssuer.publicKeys(time.Now())
+				g.Expect(publicKeys).To(HaveLen(1))
+				token := parseJWT(g, jwtToken, publicKeys[0])
+
+				// Assert JWT claims
+				assertJWTClaims(g, token, "https://example.com", "test-user@example.com", "mcp-oauth2-proxy")
 			}
 		})
 	}

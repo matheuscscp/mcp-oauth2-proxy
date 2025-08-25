@@ -40,7 +40,7 @@ func main() {
 
 	iss := newIssuer()
 	p, conf := getProviderAndConfig()
-	api := newAPI(iss, p, &conf.Proxy, newMemorySessionStore(), time.Now)
+	api := newAPI(iss, p, conf, newMemorySessionStore(), time.Now)
 
 	addr := conf.Server.Addr
 	if addr == "" {
