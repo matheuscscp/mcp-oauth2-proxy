@@ -1,6 +1,8 @@
 package main
 
 const (
+	proxyClientID = "mcp-oauth2-proxy"
+
 	queryParamAuthorizationCode   = "code"
 	queryParamCodeChallenge       = "code_challenge"
 	queryParamCodeChallengeMethod = "code_challenge_method"

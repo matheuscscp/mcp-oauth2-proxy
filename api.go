@@ -80,7 +80,7 @@ func newAPI(p provider, conf *proxyConfig, sessionStore sessionStore) http.Handl
 			return
 		}
 		respondJSON(w, http.StatusCreated, map[string]any{
-			"client_id":                  conf.Provider.ClientID,
+			"client_id":                  proxyClientID,
 			"token_endpoint_auth_method": authorizationServerTokenEndpointAuthMethod,
 			"redirect_uris":              redirectURIs,
 		})

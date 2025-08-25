@@ -288,7 +288,7 @@ func TestRegister(t *testing.T) {
 				err := json.Unmarshal(rec.Body.Bytes(), &response)
 				g.Expect(err).ToNot(HaveOccurred())
 
-				g.Expect(response["client_id"]).To(Equal("test-client-id"))
+				g.Expect(response["client_id"]).To(Equal("mcp-oauth2-proxy"))
 				g.Expect(response["token_endpoint_auth_method"]).To(Equal(authorizationServerTokenEndpointAuthMethod))
 				g.Expect(response["redirect_uris"]).To(Equal([]any{"https://example.com/callback"}))
 			}
