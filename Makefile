@@ -17,9 +17,7 @@ test:
 
 .PHONY: docker-build
 docker-build:
-	docker buildx build \
-		--platform=$(PLATFORM) \
-		-t $(IMG) .
+	docker buildx build -t $(IMG) --load --platform=$(PLATFORM) .
 
 .PHONY: docker-push
 docker-push:
