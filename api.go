@@ -184,15 +184,15 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 			return
 		}
 
-		// Issue an access token for the proxy realm.
+		// Issue an access token in the proxy realm.
 		iss := baseURL(r)
 		sub := user
 		aud := mcpOAuth2Proxy
 		now := nowFunc()
 		accessToken, exp, err := ti.issue(iss, sub, aud, now)
 		if err != nil {
-			l.WithError(err).Error("failed to issue access token")
-			http.Error(w, "Failed to issue access token", http.StatusInternalServerError)
+			l.WithError(err).Error(fmt.Sprintf("failed to issue %s access token", mcpOAuth2Proxy))
+			http.Error(w, fmt.Sprintf("Failed to issue %s access token", mcpOAuth2Proxy), http.StatusInternalServerError)
 			return
 		}
 

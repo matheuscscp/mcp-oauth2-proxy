@@ -38,7 +38,7 @@ func main() {
 	signalReceived := make(chan os.Signal, 2)
 	signal.Notify(signalReceived, os.Interrupt, syscall.SIGTERM)
 
-	iss := newIssuer()
+	iss := newTokenIssuer()
 	p, conf := getProviderAndConfig()
 	api := newAPI(iss, p, conf, newMemorySessionStore(), time.Now)
 
@@ -86,22 +86,24 @@ func main() {
 		}),
 	}
 
+	l := logrus.WithField("serverAddr", addr)
+
 	go func() {
 		if err := s.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logrus.WithError(err).Fatal("failed to start server")
+			l.WithError(err).Fatal("failed to start server")
 		}
 	}()
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := s.Shutdown(ctx); err != nil {
-			logrus.WithError(err).Error("failed to shut down server")
+			l.WithError(err).Error("failed to shut down server")
 		} else {
-			logrus.Info("server shut down successfully")
+			l.Info("server shut down successfully")
 		}
 	}()
 
-	logrus.Info("server started, waiting for signal")
+	l.Info("server started, waiting for signal")
 	<-signalReceived
-	logrus.Info("signal received, shutting down server")
+	l.Info("signal received, shutting down server")
 }

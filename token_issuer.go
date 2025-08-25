@@ -48,7 +48,7 @@ func (s *signingKey) expiredForVerifyingTokens(now time.Time) bool {
 	return s == nil || s.deadline.Add(issuerTokenDuration).Before(now)
 }
 
-func newIssuer() *tokenIssuer {
+func newTokenIssuer() *tokenIssuer {
 	return &tokenIssuer{&automaticPrivateKeySource{}}
 }
 
