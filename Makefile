@@ -1,4 +1,4 @@
-IMG := ghcr.io/matheuscscp/mcp-oauth2-proxy/test:feat-v1
+IMG := ghcr.io/matheuscscp/mcp-oauth2-proxy/test:latest
 
 PLATFORM := linux/amd64
 
