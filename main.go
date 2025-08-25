@@ -48,9 +48,6 @@ func main() {
 	p, conf := getProviderAndConfig()
 	api := newAPI(iss, p, conf, newMemorySessionStore(), time.Now)
 
-	if conf.Server.CORS {
-		api = handleCORS(api)
-	}
 	promHandler := promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
 	})
