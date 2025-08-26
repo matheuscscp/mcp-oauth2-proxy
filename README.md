@@ -94,9 +94,9 @@ mcp-oauth2-proxy exposes the following HTTP endpoints:
 
 ## Installation
 
-### Container Images
+### Container Image
 
-Container images are distributed via GitHub Container Registry and signed with keyless Cosign:
+A container image is distributed via GitHub Container Registry and signed with keyless Cosign:
 
 ```
 ghcr.io/matheuscscp/mcp-oauth2-proxy
@@ -104,7 +104,7 @@ ghcr.io/matheuscscp/mcp-oauth2-proxy
 
 ### Helm Chart
 
-OCI Helm charts are available in GitHub Container Registry and signed with keyless Cosign:
+An OCI Helm chart is distributed via GitHub Container Registry and signed with keyless Cosign:
 
 ```bash
 helm install mcp-oauth2-proxy oci://ghcr.io/matheuscscp/mcp-oauth2-proxy/charts/mcp-oauth2-proxy \
