@@ -19,32 +19,19 @@ flowchart TB
     MCP1[📦 MCP Server 1<br/>host: server1.example.com]
     MCP2[📦 MCP Server 2<br/>host: server2.example.com]
     
-    %% User OAuth Flow with IdP (via reverse proxy and direct)
-    User -.-> RP
-    RP -.-> Proxy
-    Proxy -.-> IdP
-    IdP -.-> Proxy
-    Proxy -.-> RP
-    RP -.-> User
-    User -.-> IdP
-    IdP -.-> User
-    
-    %% AI Client OAuth Flow with Proxy (via reverse proxy)
-    AI --> RP
-    RP --> Proxy
-    Proxy --> RP
-    RP --> AI
-    
-    %% User interacts with AI Client
+    %% User interactions
     User -.-> AI
-    AI -.-> User
+    User -.-> IdP
     
-    %% MCP Server Access (via reverse proxy with auth)
+    %% AI Client to services via Reverse Proxy
     AI --> RP
     RP --> Proxy
-    Proxy --> RP
     RP --> MCP1
     RP --> MCP2
+    
+    %% Authentication flow
+    Proxy -.-> IdP
+    RP --> Proxy
     
     %% Styling
     classDef userStyle fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
