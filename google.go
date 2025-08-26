@@ -39,7 +39,7 @@ func (g *googleProvider) verifyUser(ctx context.Context, ts oauth2.TokenSource) 
 		EmailVerified bool   `json:"email_verified"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&claims); err != nil {
-		return "", fmt.Errorf("error unmarshaling claims from google id token: %w", err)
+		return "", fmt.Errorf("error unmarshaling claims from google userinfo response: %w", err)
 	}
 	email := claims.Email
 

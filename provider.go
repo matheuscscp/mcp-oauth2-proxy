@@ -9,6 +9,7 @@ import (
 
 const (
 	providerGoogle = "google"
+	providerGitHub = "github"
 )
 
 type provider interface {
@@ -20,6 +21,8 @@ func newProvider(conf *config) (provider, error) {
 	switch conf.Provider.Name {
 	case providerGoogle:
 		return &googleProvider{conf.Provider.validateEmailDomain}, nil
+	case providerGitHub:
+		return githubProvider{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", conf.Provider.Name)
 	}
