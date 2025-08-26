@@ -31,15 +31,14 @@ flowchart TB
     
     %% Authentication flow
     Proxy -.-> IdP
-    RP --> Proxy
     
     %% Styling
-    classDef userStyle fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
-    classDef aiStyle fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    classDef proxyStyle fill:#e8f5e8,stroke:#2e7d32,stroke-width:2px
-    classDef idpStyle fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
-    classDef mcpStyle fill:#fce4ec,stroke:#c2185b,stroke-width:2px
-    classDef rpStyle fill:#f1f8e9,stroke:#558b2f,stroke-width:2px
+    classDef userStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px,color:#000
+    classDef aiStyle fill:#f3e5f5,stroke:#4a148c,stroke-width:2px,color:#000
+    classDef proxyStyle fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px,color:#000
+    classDef idpStyle fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
+    classDef mcpStyle fill:#fce4ec,stroke:#880e4f,stroke-width:2px,color:#000
+    classDef rpStyle fill:#f1f8e9,stroke:#33691e,stroke-width:2px,color:#000
     
     class User userStyle
     class AI aiStyle
