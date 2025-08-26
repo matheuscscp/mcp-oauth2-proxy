@@ -166,7 +166,7 @@ The key difference from traditional oauth2-proxy integration is that mcp-oauth2-
 
 ### Key Configuration Options
 
-- `provider.name`: OAuth2 provider (`google`)
+- `provider.name`: OAuth2 provider (`google` or `github`)
 - `provider.clientID`: OAuth2 client ID from your IdP
 - `provider.clientSecret`: OAuth2 client secret from your IdP  
 - `provider.allowedEmailDomains`: List of Go regular expressions for allowed email domains
