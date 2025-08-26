@@ -26,6 +26,16 @@ func TestNewProvider(t *testing.T) {
 			expectedType: "*main.googleProvider",
 		},
 		{
+			name: "github provider",
+			config: &config{
+				Provider: providerConfig{
+					Name: "github",
+				},
+			},
+			expectError:  false,
+			expectedType: "main.githubProvider",
+		},
+		{
 			name: "unsupported provider",
 			config: &config{
 				Provider: providerConfig{
@@ -75,6 +85,15 @@ func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	// Redirect Google userinfo calls to our test server
 	if req.URL.Host == "openidconnect.googleapis.com" {
+		// Parse the test server URL to get the correct host
+		testURL := m.server.URL + req.URL.Path
+		newReq := req.Clone(req.Context())
+		newReq.URL, _ = newReq.URL.Parse(testURL)
+		return http.DefaultTransport.RoundTrip(newReq)
+	}
+
+	// Redirect GitHub API calls to our test server
+	if req.URL.Host == "api.github.com" {
 		// Parse the test server URL to get the correct host
 		testURL := m.server.URL + req.URL.Path
 		newReq := req.Clone(req.Context())

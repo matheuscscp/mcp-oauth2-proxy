@@ -97,7 +97,7 @@ func TestGoogleProvider_verifyUser(t *testing.T) {
 			validateEmail: func(email string) bool {
 				return true
 			},
-			expectedError: "error unmarshaling claims from google id token",
+			expectedError: "error unmarshaling claims from google userinfo response",
 		},
 	}
 

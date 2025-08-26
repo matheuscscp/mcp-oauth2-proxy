@@ -178,7 +178,7 @@ The key difference from traditional oauth2-proxy integration is that mcp-oauth2-
 ## Roadmap
 
 - [x] Google Authentication
-- [ ] GitHub Authentication
+- [x] GitHub Authentication
 - [ ] Microsoft Entra ID Authentication
 - [ ] Google Authorization (via Google Groups)
 - [ ] GitHub Authorization (via GitHub Teams)
