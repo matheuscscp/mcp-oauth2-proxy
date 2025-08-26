@@ -11,8 +11,8 @@ The search is over. Easy OAuth 2.0 proxy for MCP servers.
 
 ```mermaid
 flowchart TB
-    User[👤 User Browser<br/>Claude Web]
-    AI[🤖 AI Client<br/>Claude Web (server)]
+    User[👤 User Browser<br/>Claude Web Page]
+    AI[🤖 AI Client<br/>Claude Web Server]
     RP[🔀 Reverse Proxy<br/>e.g. nginx]
     Proxy[🛡️ mcp-oauth2-proxy<br/>Authorization Server]
     IdP[🔑 Identity Provider<br/>Google/GitHub/Microsoft]
