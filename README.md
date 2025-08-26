@@ -11,17 +11,18 @@ The search is over. Easy OAuth 2.0 proxy for MCP servers.
 
 ```mermaid
 flowchart TB
-    User[👤 User<br/>Browser]
-    AI[🤖 AI Client<br/>Claude Desktop]
-    RP[🔀 Reverse Proxy<br/>nginx]
+    User[👤 User Browser<br/>Claude Web]
+    AI[🤖 AI Client<br/>Claude Web (server)]
+    RP[🔀 Reverse Proxy<br/>e.g. nginx]
     Proxy[🛡️ mcp-oauth2-proxy<br/>Authorization Server]
-    IdP[🔑 Identity Provider<br/>Google/GitHub/Azure]
+    IdP[🔑 Identity Provider<br/>Google/GitHub/Microsoft]
     MCP1[📦 MCP Server 1<br/>host: server1.example.com]
     MCP2[📦 MCP Server 2<br/>host: server2.example.com]
     
     %% User interactions
     User -.-> AI
     User -.-> IdP
+    User -.-> RP
     
     %% AI Client to services via Reverse Proxy
     AI --> RP
@@ -181,4 +182,4 @@ The key difference from traditional oauth2-proxy integration is that mcp-oauth2-
 - [ ] Microsoft Entra ID Authentication
 - [ ] Google Authorization (via Google Groups)
 - [ ] GitHub Authorization (via GitHub Teams)
-- [ ] Azure Authorization (via Microsoft Entra ID Groups)
+- [ ] Microsoft Entra ID Authorization (via Microsoft Entra ID Groups)
