@@ -18,6 +18,10 @@ func callbackURL(r *http.Request) string {
 	return baseURL(r) + pathCallback
 }
 
+func jwksURL(r *http.Request) string {
+	return baseURL(r) + pathJWKS
+}
+
 func authorizationCode(r *http.Request) string {
 	return r.URL.Query().Get(queryParamAuthorizationCode)
 }
