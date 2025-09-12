@@ -24,6 +24,10 @@ const (
 	pathAuthorize                = "/authorize"
 	pathCallback                 = "/callback"
 	pathToken                    = "/token"
+
+	// OIDC endpoints.
+	pathOpenIDConfiguration = "/.well-known/openid-configuration"
+	pathJWKS                = "/openid/v1/jwks"
 )
 
 func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore, nowFunc func() time.Time) http.Handler {
@@ -249,6 +253,20 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 		}
 
 		respondJSON(w, http.StatusOK, s.outcome)
+	})
+
+	mux.HandleFunc(pathOpenIDConfiguration, func(w http.ResponseWriter, r *http.Request) {
+		respondJSON(w, http.StatusOK, map[string]any{
+			"issuer":                                baseURL(r),
+			"jwks_uri":                              jwksURL(r),
+			"id_token_signing_alg_values_supported": []string{issuerAlgorithm().String()},
+		})
+	})
+
+	mux.HandleFunc(pathJWKS, func(w http.ResponseWriter, r *http.Request) {
+		respondJSON(w, http.StatusOK, map[string]any{
+			"keys": ti.publicKeys(time.Now()),
+		})
 	})
 
 	return mux

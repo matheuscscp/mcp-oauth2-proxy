@@ -84,6 +84,18 @@ mcp-oauth2-proxy exposes the following HTTP endpoints:
 - **`/callback`** - OAuth 2.0 Authorization callback
 - **`/token`** - OAuth 2.0 Token exchange endpoint
 
+#### OpenID Connect (OIDC) Endpoints
+- **`/.well-known/openid-configuration`** - OpenID Connect Discovery document
+  - **Response**: JSON containing OIDC metadata including issuer, JWKS URI, and supported algorithms
+  - **Fields**:
+    - `issuer` - The authorization server's issuer identifier URL
+    - `jwks_uri` - URL of the JSON Web Key Set containing signing keys
+    - `id_token_signing_alg_values_supported` - Supported signing algorithms (RS256)
+- **`/openid/v1/jwks`** - JSON Web Key Set (JWKS) for token verification
+  - **Response**: JSON containing public keys used for JWT token signature verification
+  - **Fields**:
+    - `keys` - Array of JWK objects containing RSA public keys for token verification
+
 ### Key Features
 
 - **Dual OAuth2 Flows**: Creates an authorization realm where the AI client never knows about the backing IdP

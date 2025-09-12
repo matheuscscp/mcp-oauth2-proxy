@@ -901,3 +901,85 @@ func TestToken(t *testing.T) {
 		})
 	}
 }
+
+func TestOpenIDConfiguration(t *testing.T) {
+	g := NewWithT(t)
+
+	tokenIssuer := newTestTokenIssuer(nil)
+	mockProv := &mockProvider{}
+	conf := newTestConfig()
+	sessionStore := newMemorySessionStore()
+
+	api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
+
+	req := httptest.NewRequest(http.MethodGet, pathOpenIDConfiguration, nil)
+	req.Host = "example.com"
+	rec := httptest.NewRecorder()
+
+	api.ServeHTTP(rec, req)
+
+	g.Expect(rec.Code).To(Equal(http.StatusOK))
+	g.Expect(rec.Header().Get("Content-Type")).To(Equal("application/json"))
+
+	response := parseJSONResponse(g, rec.Body.Bytes())
+
+	g.Expect(response["issuer"]).To(Equal("https://example.com"))
+	g.Expect(response["jwks_uri"]).To(Equal("https://example.com" + pathJWKS))
+
+	signingAlgs, ok := response["id_token_signing_alg_values_supported"].([]any)
+	g.Expect(ok).To(BeTrue())
+	g.Expect(signingAlgs).To(HaveLen(1))
+	g.Expect(signingAlgs[0]).To(Equal(issuerAlgorithm().String()))
+}
+
+func TestJWKS(t *testing.T) {
+	g := NewWithT(t)
+
+	// Create a token issuer with known keys for testing
+	tokenIssuer, _, publicKey := newTestTokenIssuerWithSharedKeys()
+	mockProv := &mockProvider{}
+	conf := newTestConfig()
+	sessionStore := newMemorySessionStore()
+
+	api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
+
+	req := httptest.NewRequest(http.MethodGet, pathJWKS, nil)
+	rec := httptest.NewRecorder()
+
+	api.ServeHTTP(rec, req)
+
+	g.Expect(rec.Code).To(Equal(http.StatusOK))
+	g.Expect(rec.Header().Get("Content-Type")).To(Equal("application/json"))
+
+	response := parseJSONResponse(g, rec.Body.Bytes())
+
+	keys, ok := response["keys"].([]any)
+	g.Expect(ok).To(BeTrue())
+	g.Expect(keys).To(HaveLen(1))
+
+	// Verify the returned key has the expected structure
+	key := keys[0].(map[string]any)
+	g.Expect(key["kty"]).To(Equal("RSA"))
+	g.Expect(key["n"]).ToNot(BeEmpty()) // RSA modulus
+	g.Expect(key["e"]).ToNot(BeEmpty()) // RSA exponent
+
+	// Check if optional fields are present
+	if alg, exists := key["alg"]; exists {
+		g.Expect(alg).To(Equal(issuerAlgorithm().String()))
+	}
+
+	// Verify we can recreate the same public key from the JWK response
+	keyBytes, err := json.Marshal(key)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	reconstructedKey, err := jwk.ParseKey(keyBytes)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// The reconstructed key should have the same key ID as the original
+	origKeyID, origExists := publicKey.KeyID()
+	reconKeyID, reconExists := reconstructedKey.KeyID()
+	g.Expect(reconExists).To(Equal(origExists))
+	if origExists && reconExists {
+		g.Expect(reconKeyID).To(Equal(origKeyID))
+	}
+}
