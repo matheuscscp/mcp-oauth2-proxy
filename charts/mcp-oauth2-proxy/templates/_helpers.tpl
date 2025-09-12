@@ -66,11 +66,18 @@ Create the list of HTTP paths that ingress must listen on.
 */}}
 {{- define "mcp-oauth2-proxy.ingressPaths" -}}
 paths:
+  # Authentication endpoint.
   - /authenticate
+
+  # OAuth2 DCRP endpoints.
   - /.well-known/oauth-protected-resource
   - /.well-known/oauth-authorization-server
   - /register
   - /authorize
   - /callback
   - /token
+
+  # OIDC endpoints.
+  - /.well-known/openid-configuration
+  - /openid/v1/jwks
 {{- end }}
