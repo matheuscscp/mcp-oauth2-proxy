@@ -43,7 +43,7 @@ func oauth2Config(r *http.Request, p provider, conf *config) *oauth2.Config {
 
 func respondWWWAuthenticate(w http.ResponseWriter, r *http.Request) {
 	resourceMetadata := fmt.Sprintf("%s%s", baseURL(r), pathOAuthProtectedResource)
-	wwwAuthenticate := fmt.Sprintf(`Bearer realm="mcp-oauth2-proxy", resource_metadata="%s"`, resourceMetadata)
+	wwwAuthenticate := fmt.Sprintf(`Bearer realm="%s", resource_metadata="%s"`, mcpOAuth2Proxy, resourceMetadata)
 	w.Header().Set("WWW-Authenticate", wwwAuthenticate)
 	const status = http.StatusUnauthorized
 	http.Error(w, http.StatusText(status), status)
