@@ -14,6 +14,6 @@ const (
 	authorizationServerGrantType               = "authorization_code"
 	authorizationServerResponseMode            = "query"
 	authorizationServerResponseType            = "code"
-	authorizationServerScope                   = mcpOAuth2Proxy
+	authorizationServerDefaultScope            = mcpOAuth2Proxy
 	authorizationServerTokenEndpointAuthMethod = "none"
 )
