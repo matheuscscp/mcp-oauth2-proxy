@@ -14,9 +14,6 @@ const (
 	// Ping endpoint. Will respond WWW-Authenticate header if a valid bearer token is not provided.
 	pathAuthenticate = "/authenticate"
 
-	// Returned in the /authenticate response.
-	responseHeaderAccessToken = "X-Auth-Request-Access-Token"
-
 	// OAuth 2.0 Dynamic Client Registration Protocol-compliant endpoints.
 	pathOAuthProtectedResource   = "/.well-known/oauth-protected-resource"
 	pathOAuthAuthorizationServer = "/.well-known/oauth-authorization-server"
@@ -42,8 +39,6 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 			respondWWWAuthenticate(w, r)
 			return
 		}
-
-		w.Header().Set(responseHeaderAccessToken, token)
 
 		fromRequest(r).Debug("request authenticated")
 	})
