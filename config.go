@@ -29,9 +29,21 @@ type providerConfig struct {
 }
 
 type proxyConfig struct {
-	AllowedRedirectURLs []string `yaml:"allowedRedirectURLs" json:"allowedRedirectURLs"`
+	AllowedRedirectURLs []string     `yaml:"allowedRedirectURLs" json:"allowedRedirectURLs"`
+	Hosts               []hostConfig `yaml:"hosts" json:"hosts"`
 
 	regexAllowedRedirectURLs []*regexp.Regexp
+}
+
+type hostConfig struct {
+	Host   string        `yaml:"host" json:"host"`
+	Scopes []scopeConfig `yaml:"scopes" json:"scopes"`
+}
+
+type scopeConfig struct {
+	Name        string   `yaml:"name" json:"name"`
+	Description string   `yaml:"description" json:"description"`
+	Covers      []string `yaml:"covers" json:"covers"`
 }
 
 type serverConfig struct {
@@ -69,6 +81,19 @@ func (c *config) validateAndInitialize() error {
 	}
 	if c.Proxy.AllowedRedirectURLs == nil {
 		c.Proxy.AllowedRedirectURLs = []string{}
+	}
+	if c.Proxy.Hosts == nil {
+		c.Proxy.Hosts = []hostConfig{}
+	}
+	for i := range c.Proxy.Hosts {
+		if c.Proxy.Hosts[i].Scopes == nil {
+			c.Proxy.Hosts[i].Scopes = []scopeConfig{}
+		}
+		for j := range c.Proxy.Hosts[i].Scopes {
+			if c.Proxy.Hosts[i].Scopes[j].Covers == nil {
+				c.Proxy.Hosts[i].Scopes[j].Covers = []string{}
+			}
+		}
 	}
 	if c.Server.Addr == "" {
 		c.Server.Addr = defaultServerAddr
@@ -133,4 +158,20 @@ func (p *proxyConfig) validateRedirectURL(url string) bool {
 		}
 	}
 	return false
+}
+
+func (p *proxyConfig) supportedScopes(host string) ([]string, []scopeConfig) {
+	for _, h := range p.Hosts {
+		if h.Host == host {
+			if len(h.Scopes) == 0 {
+				return []string{authorizationServerDefaultScope}, nil
+			}
+			scopes := make([]string, 0, len(h.Scopes))
+			for _, s := range h.Scopes {
+				scopes = append(scopes, s.Name)
+			}
+			return scopes, h.Scopes
+		}
+	}
+	return []string{authorizationServerDefaultScope}, nil
 }

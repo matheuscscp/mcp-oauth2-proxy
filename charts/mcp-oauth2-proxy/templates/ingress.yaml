@@ -23,10 +23,10 @@ spec:
       secretName: {{ .secretName }}
     {{- end }}
   {{- end }}
-  {{- if .Values.ingress.hosts }}
+  {{- if .Values.proxy.hosts }}
   rules:
-    {{- range $host := .Values.ingress.hosts }}
-    - host: {{ $host }}
+    {{- range $host := .Values.proxy.hosts }}
+    - host: {{ $host.host }}
       http:
         paths:
           {{- range $p := (include "mcp-oauth2-proxy.ingressPaths" $ | fromYaml).paths }}

@@ -42,6 +42,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 				},
 				Proxy: proxyConfig{
 					AllowedRedirectURLs: []string{"https://example\\.com/.*", "https://test\\.org/.*"},
+					Hosts:               []hostConfig{},
 				},
 				Server: serverConfig{
 					Addr: ":9090",
@@ -67,6 +68,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 				},
 				Proxy: proxyConfig{
 					AllowedRedirectURLs: []string{},
+					Hosts:               []hostConfig{},
 				},
 				Server: serverConfig{
 					Addr: ":8080",
@@ -120,6 +122,143 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 			wantErr:        true,
 			expectedErrMsg: "failed to build regex list for allowed redirect URLs",
 		},
+		{
+			name: "config with nil hosts - initializes empty slice",
+			config: config{
+				Provider: providerConfig{
+					ClientID:     "test-client-id",
+					ClientSecret: "test-client-secret",
+				},
+				Proxy: proxyConfig{
+					Hosts: nil,
+				},
+			},
+			wantErr: false,
+			expectedConfig: config{
+				Provider: providerConfig{
+					Name:                "google",
+					ClientID:            "test-client-id",
+					ClientSecret:        "test-client-secret",
+					AllowedEmailDomains: []string{},
+				},
+				Proxy: proxyConfig{
+					AllowedRedirectURLs: []string{},
+					Hosts:               []hostConfig{},
+				},
+				Server: serverConfig{
+					Addr: ":8080",
+					CORS: false,
+				},
+			},
+		},
+		{
+			name: "config with hosts having nil scopes - initializes empty slices",
+			config: config{
+				Provider: providerConfig{
+					ClientID:     "test-client-id",
+					ClientSecret: "test-client-secret",
+				},
+				Proxy: proxyConfig{
+					Hosts: []hostConfig{
+						{
+							Host:   "example.com",
+							Scopes: nil,
+						},
+						{
+							Host:   "test.org",
+							Scopes: nil,
+						},
+					},
+				},
+			},
+			wantErr: false,
+			expectedConfig: config{
+				Provider: providerConfig{
+					Name:                "google",
+					ClientID:            "test-client-id",
+					ClientSecret:        "test-client-secret",
+					AllowedEmailDomains: []string{},
+				},
+				Proxy: proxyConfig{
+					AllowedRedirectURLs: []string{},
+					Hosts: []hostConfig{
+						{
+							Host:   "example.com",
+							Scopes: []scopeConfig{},
+						},
+						{
+							Host:   "test.org",
+							Scopes: []scopeConfig{},
+						},
+					},
+				},
+				Server: serverConfig{
+					Addr: ":8080",
+					CORS: false,
+				},
+			},
+		},
+		{
+			name: "config with scopes having nil covers - initializes empty slices",
+			config: config{
+				Provider: providerConfig{
+					ClientID:     "test-client-id",
+					ClientSecret: "test-client-secret",
+				},
+				Proxy: proxyConfig{
+					Hosts: []hostConfig{
+						{
+							Host: "example.com",
+							Scopes: []scopeConfig{
+								{
+									Name:        "read",
+									Description: "Read access",
+									Covers:      nil,
+								},
+								{
+									Name:        "write",
+									Description: "Write access",
+									Covers:      nil,
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+			expectedConfig: config{
+				Provider: providerConfig{
+					Name:                "google",
+					ClientID:            "test-client-id",
+					ClientSecret:        "test-client-secret",
+					AllowedEmailDomains: []string{},
+				},
+				Proxy: proxyConfig{
+					AllowedRedirectURLs: []string{},
+					Hosts: []hostConfig{
+						{
+							Host: "example.com",
+							Scopes: []scopeConfig{
+								{
+									Name:        "read",
+									Description: "Read access",
+									Covers:      []string{},
+								},
+								{
+									Name:        "write",
+									Description: "Write access",
+									Covers:      []string{},
+								},
+							},
+						},
+					},
+				},
+				Server: serverConfig{
+					Addr: ":8080",
+					CORS: false,
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -141,6 +280,16 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 			g.Expect(tt.config.Server.Addr).To(Equal(tt.expectedConfig.Server.Addr))
 			g.Expect(tt.config.Provider.AllowedEmailDomains).To(Equal(tt.expectedConfig.Provider.AllowedEmailDomains))
 			g.Expect(tt.config.Proxy.AllowedRedirectURLs).To(Equal(tt.expectedConfig.Proxy.AllowedRedirectURLs))
+			g.Expect(tt.config.Proxy.Hosts).To(Equal(tt.expectedConfig.Proxy.Hosts))
+
+			// Verify nil slice initialization worked
+			g.Expect(tt.config.Proxy.Hosts).ToNot(BeNil())
+			for i := range tt.config.Proxy.Hosts {
+				g.Expect(tt.config.Proxy.Hosts[i].Scopes).ToNot(BeNil())
+				for j := range tt.config.Proxy.Hosts[i].Scopes {
+					g.Expect(tt.config.Proxy.Hosts[i].Scopes[j].Covers).ToNot(BeNil())
+				}
+			}
 
 			// Verify regex compilation worked when applicable
 			if len(tt.config.Provider.AllowedEmailDomains) > 0 {
@@ -367,6 +516,143 @@ func TestProxyConfig_validateRedirectURL(t *testing.T) {
 			g := NewWithT(t)
 			result := tt.proxy.validateRedirectURL(tt.url)
 			g.Expect(result).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestProxyConfig_supportedScopes(t *testing.T) {
+	tests := []struct {
+		name           string
+		proxy          proxyConfig
+		host           string
+		expected       []string
+		expectedConfig []scopeConfig
+	}{
+		{
+			name: "no hosts configured - returns default scope",
+			proxy: proxyConfig{
+				Hosts: []hostConfig{},
+			},
+			host:     "example.com",
+			expected: []string{"mcp-oauth2-proxy"},
+		},
+		{
+			name: "host not found - returns default scope",
+			proxy: proxyConfig{
+				Hosts: []hostConfig{
+					{
+						Host: "other.com",
+						Scopes: []scopeConfig{
+							{Name: "read"},
+							{Name: "write"},
+						},
+					},
+				},
+			},
+			host:     "example.com",
+			expected: []string{"mcp-oauth2-proxy"},
+		},
+		{
+			name: "host found with single scope",
+			proxy: proxyConfig{
+				Hosts: []hostConfig{
+					{
+						Host: "example.com",
+						Scopes: []scopeConfig{
+							{Name: "read", Description: "Read access"},
+						},
+					},
+				},
+			},
+			host:     "example.com",
+			expected: []string{"read"},
+			expectedConfig: []scopeConfig{
+				{Name: "read", Description: "Read access"},
+			},
+		},
+		{
+			name: "host found with multiple scopes",
+			proxy: proxyConfig{
+				Hosts: []hostConfig{
+					{
+						Host: "example.com",
+						Scopes: []scopeConfig{
+							{Name: "read", Description: "Read access"},
+							{Name: "write", Description: "Write access"},
+							{Name: "admin", Description: "Admin access"},
+						},
+					},
+				},
+			},
+			host:     "example.com",
+			expected: []string{"read", "write", "admin"},
+			expectedConfig: []scopeConfig{
+				{Name: "read", Description: "Read access"},
+				{Name: "write", Description: "Write access"},
+				{Name: "admin", Description: "Admin access"},
+			},
+		},
+		{
+			name: "host found with no scopes - returns default scope",
+			proxy: proxyConfig{
+				Hosts: []hostConfig{
+					{
+						Host:   "example.com",
+						Scopes: []scopeConfig{},
+					},
+				},
+			},
+			host:     "example.com",
+			expected: []string{"mcp-oauth2-proxy"},
+		},
+		{
+			name: "multiple hosts - returns scopes for matching host",
+			proxy: proxyConfig{
+				Hosts: []hostConfig{
+					{
+						Host: "example.com",
+						Scopes: []scopeConfig{
+							{Name: "read"},
+							{Name: "write"},
+						},
+					},
+					{
+						Host: "test.org",
+						Scopes: []scopeConfig{
+							{Name: "admin"},
+						},
+					},
+				},
+			},
+			host:     "test.org",
+			expected: []string{"admin"},
+			expectedConfig: []scopeConfig{
+				{Name: "admin"},
+			},
+		},
+		{
+			name: "host match is exact - case sensitive",
+			proxy: proxyConfig{
+				Hosts: []hostConfig{
+					{
+						Host: "Example.com",
+						Scopes: []scopeConfig{
+							{Name: "read"},
+						},
+					},
+				},
+			},
+			host:     "example.com",
+			expected: []string{"mcp-oauth2-proxy"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result, resultConfig := tt.proxy.supportedScopes(tt.host)
+			g.Expect(result).To(Equal(tt.expected))
+			g.Expect(resultConfig).To(Equal(tt.expectedConfig))
 		})
 	}
 }

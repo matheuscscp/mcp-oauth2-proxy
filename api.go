@@ -44,7 +44,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 	})
 
 	mux.HandleFunc(pathOAuthProtectedResource, func(w http.ResponseWriter, r *http.Request) {
-		respondJSON(w, http.StatusOK, map[string]any{
+		respondJSON(w, r, http.StatusOK, map[string]any{
 			"authorization_servers": []map[string]any{{
 				"issuer":                 baseURL(r),
 				"authorization_endpoint": fmt.Sprintf("%s%s", baseURL(r), pathAuthorize),
@@ -53,7 +53,8 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 	})
 
 	mux.HandleFunc(pathOAuthAuthorizationServer, func(w http.ResponseWriter, r *http.Request) {
-		respondJSON(w, http.StatusOK, map[string]any{
+		supportedScopes, _ := conf.Proxy.supportedScopes(r.Host)
+		respondJSON(w, r, http.StatusOK, map[string]any{
 			"issuer":                                baseURL(r),
 			"authorization_endpoint":                fmt.Sprintf("%s%s", baseURL(r), pathAuthorize),
 			"token_endpoint":                        fmt.Sprintf("%s%s", baseURL(r), pathToken),
@@ -62,7 +63,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 			"grant_types_supported":                 []string{authorizationServerGrantType},
 			"response_modes_supported":              []string{authorizationServerResponseMode},
 			"response_types_supported":              []string{authorizationServerResponseType},
-			"scopes_supported":                      []string{authorizationServerDefaultScope},
+			"scopes_supported":                      supportedScopes,
 			"token_endpoint_auth_methods_supported": []string{authorizationServerTokenEndpointAuthMethod},
 		})
 	})
@@ -105,7 +106,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 		if len(req.RedirectURIs) > 0 {
 			resp["redirect_uris"] = req.RedirectURIs
 		}
-		respondJSON(w, http.StatusCreated, resp)
+		respondJSON(w, r, http.StatusCreated, resp)
 
 		l.WithField("registration", req).Info("client registered")
 	})
@@ -113,8 +114,10 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 	mux.HandleFunc(pathAuthorize, func(w http.ResponseWriter, r *http.Request) {
 		l := fromRequest(r)
 
-		if r.URL.Query().Get(queryParamCodeChallengeMethod) != authorizationServerCodeChallengeMethod {
-			http.Error(w, fmt.Sprintf("Unsupported %s", queryParamCodeChallengeMethod), http.StatusBadRequest)
+		// Render scope selection page.
+		_, supportedScopes := conf.Proxy.supportedScopes(r.Host)
+		if !r.URL.Query().Has("skip_scope_selection") && len(supportedScopes) > 0 {
+			respondScopeSelectionPage(w, r, supportedScopes)
 			return
 		}
 
@@ -195,7 +198,8 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 		sub := user
 		aud := baseURL(r)
 		now := nowFunc()
-		accessToken, exp, err := ti.issue(iss, sub, aud, now)
+		scopes := tx.clientParams.scopes
+		accessToken, exp, err := ti.issue(iss, sub, aud, now, scopes)
 		if err != nil {
 			l.WithError(err).Error("failed to issue access token")
 			http.Error(w, "Failed to issue access token", http.StatusInternalServerError)
@@ -257,11 +261,11 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 			return
 		}
 
-		respondJSON(w, http.StatusOK, s.outcome)
+		respondJSON(w, r, http.StatusOK, s.outcome)
 	})
 
 	mux.HandleFunc(pathOpenIDConfiguration, func(w http.ResponseWriter, r *http.Request) {
-		respondJSON(w, http.StatusOK, map[string]any{
+		respondJSON(w, r, http.StatusOK, map[string]any{
 			"issuer":                                baseURL(r),
 			"jwks_uri":                              jwksURL(r),
 			"id_token_signing_alg_values_supported": []string{issuerAlgorithm().String()},
@@ -269,7 +273,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 	})
 
 	mux.HandleFunc(pathJWKS, func(w http.ResponseWriter, r *http.Request) {
-		respondJSON(w, http.StatusOK, map[string]any{
+		respondJSON(w, r, http.StatusOK, map[string]any{
 			"keys": ti.publicKeys(time.Now()),
 		})
 	})

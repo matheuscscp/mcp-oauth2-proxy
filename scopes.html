@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Select Permissions</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            animation: slideUp 0.5s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+            font-weight: 600;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .scopes-container {
+            margin-bottom: 30px;
+        }
+
+        .scope-item {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 8px 20px;
+            margin-bottom: 6px;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .scope-item:hover {
+            background: #fff;
+            border-color: #667eea;
+            transform: translateX(5px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
+        }
+
+        .scope-checkbox {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin-right: 12px;
+            cursor: pointer;
+            accent-color: #667eea;
+        }
+
+        .scope-description {
+            flex: 1;
+            color: #333;
+            font-size: 15px;
+            line-height: 1.5;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .submit-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 14px 40px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .submit-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .submit-button:active {
+            transform: translateY(0);
+        }
+
+        .unselect-all-button {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .unselect-all-button:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(108, 117, 125, 0.3);
+        }
+
+        .unselect-all-button:active {
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Select Permissions</h1>
+        <p class="subtitle">Choose the permissions you want to grant for the interaction with the MCP server:</p>
+        <p class="subtitle" style="text-align: center;"><b><code>MCP_HOST</code></b></p>
+
+        <form id="scopeForm">
+            <div class="scopes-container" id="scopesContainer"></div>
+            <div class="button-group">
+                <button type="button" class="unselect-all-button" id="unselectAllBtn">Unselect All</button>
+                <button type="submit" class="submit-button">Continue with Selected Permissions</button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        const scopes = MCP_SCOPES;
+
+        const scopeElements = new Map();
+
+        function initializeScopes() {
+            const container = document.getElementById('scopesContainer');
+            if (!container) {
+                console.error('Container element not found');
+                return;
+            }
+
+            scopes.forEach(scope => {
+                const scopeDiv = document.createElement('div');
+                scopeDiv.className = 'scope-item';
+                scopeDiv.dataset.scopeName = scope.name;
+
+                const label = document.createElement('label');
+                label.className = 'scope-checkbox';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = scope.name;
+                checkbox.id = `scope-${scope.name}`;
+
+                const description = document.createElement('span');
+                description.className = 'scope-description';
+                description.innerHTML = scope.description;
+
+                label.appendChild(checkbox);
+                label.appendChild(description);
+                scopeDiv.appendChild(label);
+                container.appendChild(scopeDiv);
+
+                scopeElements.set(scope.name, {
+                    checkbox,
+                    div: scopeDiv,
+                    description
+                });
+
+                checkbox.addEventListener('change', () => handleScopeChange(scope));
+            });
+        }
+
+        function handleScopeChange(scope) {
+            const elements = scopeElements.get(scope.name);
+            if (!elements) {
+                console.error('Scope elements not found for:', scope.name);
+                return;
+            }
+
+            const checkbox = elements.checkbox;
+
+            if (checkbox.checked) {
+                // When checking a scope, also check all scopes it covers
+                scopes.forEach(otherScope => {
+                    if (otherScope.coveredBy && otherScope.coveredBy.includes(scope.name)) {
+                        const otherElements = scopeElements.get(otherScope.name);
+                        if (otherElements && otherElements.checkbox) {
+                            otherElements.checkbox.checked = true;
+                        }
+                    }
+                });
+            }
+        }
+
+        function unselectAll() {
+            scopes.forEach(scope => {
+                const elements = scopeElements.get(scope.name);
+                if (elements && elements.checkbox) {
+                    elements.checkbox.checked = false;
+                }
+            });
+        }
+
+        function handleSubmit(e) {
+            e.preventDefault();
+
+            // Get all checked scopes
+            const allSelectedScopes = [];
+            scopes.forEach(scope => {
+                const elements = scopeElements.get(scope.name);
+                if (elements && elements.checkbox && elements.checkbox.checked) {
+                    allSelectedScopes.push(scope.name);
+                }
+            });
+
+            // Get current URL and parameters
+            const url = new URL(window.location.href);
+            const params = new URLSearchParams(url.search);
+
+            // Update scope parameter
+            if (allSelectedScopes.length > 0) {
+                params.set('scope', allSelectedScopes.join(' '));
+            } else {
+                params.delete('scope');
+            }
+
+            // Add skip_scope_selection parameter
+            params.set('skip_scope_selection', 'true');
+
+            // Redirect with new parameters
+            window.location.href = `${url.pathname}?${params.toString()}`;
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeScopes();
+
+            const form = document.getElementById('scopeForm');
+            if (form) {
+                form.addEventListener('submit', handleSubmit);
+            }
+
+            const unselectBtn = document.getElementById('unselectAllBtn');
+            if (unselectBtn) {
+                unselectBtn.addEventListener('click', unselectAll);
+            }
+        });
+    </script>
+</body>
+</html>

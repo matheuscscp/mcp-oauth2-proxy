@@ -19,6 +19,7 @@ func TestTokenIssuer_issue(t *testing.T) {
 		issuer        string
 		subject       string
 		audience      string
+		scopes        []string
 		keySource     privateKeySource
 		expectedError string
 	}{
@@ -27,6 +28,13 @@ func TestTokenIssuer_issue(t *testing.T) {
 			issuer:   "https://example.com",
 			subject:  "user@example.com",
 			audience: "mcp-oauth2-proxy",
+		},
+		{
+			name:     "valid token with scopes",
+			issuer:   "https://example.com",
+			subject:  "user@example.com",
+			audience: "mcp-oauth2-proxy",
+			scopes:   []string{"read", "write", "admin"},
 		},
 		{
 			name:     "empty issuer",
@@ -69,7 +77,7 @@ func TestTokenIssuer_issue(t *testing.T) {
 
 			now := time.Now()
 
-			tokenString, exp, err := tokenIssuer.issue(tt.issuer, tt.subject, tt.audience, now)
+			tokenString, exp, err := tokenIssuer.issue(tt.issuer, tt.subject, tt.audience, now, tt.scopes)
 
 			if tt.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
@@ -115,6 +123,19 @@ func TestTokenIssuer_issue(t *testing.T) {
 				// JTI should be a valid UUID
 				_, err := uuid.Parse(jti)
 				g.Expect(err).ToNot(HaveOccurred())
+
+				// Check scopes claim
+				var tokenScopes []interface{}
+				scopesErr := token.Get("scopes", &tokenScopes)
+				if tt.scopes == nil {
+					g.Expect(scopesErr).To(HaveOccurred()) // No scopes claim should be present
+				} else {
+					g.Expect(scopesErr).ToNot(HaveOccurred())
+					g.Expect(tokenScopes).To(HaveLen(len(tt.scopes)))
+					for i, scope := range tt.scopes {
+						g.Expect(tokenScopes[i]).To(Equal(scope))
+					}
+				}
 			}
 		})
 	}
@@ -132,7 +153,7 @@ func TestTokenIssuer_verify(t *testing.T) {
 		{
 			name: "valid token",
 			setupToken: func(ti *tokenIssuer, now time.Time) string {
-				token, _, err := ti.issue("https://example.com", "user@example.com", "mcp-oauth2-proxy", now)
+				token, _, err := ti.issue("https://example.com", "user@example.com", "mcp-oauth2-proxy", now, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -165,7 +186,7 @@ func TestTokenIssuer_verify(t *testing.T) {
 			setupToken: func(ti *tokenIssuer, now time.Time) string {
 				// Issue token in the past
 				pastTime := now.Add(-2 * issuerTokenDuration)
-				token, _, err := ti.issue("https://example.com", "user@example.com", "mcp-oauth2-proxy", pastTime)
+				token, _, err := ti.issue("https://example.com", "user@example.com", "mcp-oauth2-proxy", pastTime, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -214,7 +235,7 @@ func TestTokenIssuer_verify(t *testing.T) {
 		{
 			name: "wrong issuer",
 			setupToken: func(ti *tokenIssuer, now time.Time) string {
-				token, _, err := ti.issue("https://wrong-issuer.com", "user@example.com", "mcp-oauth2-proxy", now)
+				token, _, err := ti.issue("https://wrong-issuer.com", "user@example.com", "mcp-oauth2-proxy", now, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -227,7 +248,7 @@ func TestTokenIssuer_verify(t *testing.T) {
 		{
 			name: "wrong audience",
 			setupToken: func(ti *tokenIssuer, now time.Time) string {
-				token, _, err := ti.issue("https://example.com", "user@example.com", "wrong-audience", now)
+				token, _, err := ti.issue("https://example.com", "user@example.com", "wrong-audience", now, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -637,3 +658,4 @@ func TestNewTokenIssuer(t *testing.T) {
 	_, ok := issuer.privateKeySource.(*automaticPrivateKeySource)
 	g.Expect(ok).To(BeTrue())
 }
+
