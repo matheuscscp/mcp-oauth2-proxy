@@ -133,6 +133,7 @@ func newTestTransaction() *transaction {
 			state:         "test-state",
 		},
 		codeVerifier: "test-verifier",
+		host:         "example.com",
 	}
 }
 
@@ -627,6 +628,7 @@ func TestCallback(t *testing.T) {
 		retrieveError    bool
 		needsTokenServer bool
 		issueError       bool
+		requestHost      string
 	}{
 		{
 			name:           "missing CSRF cookie",
@@ -657,6 +659,14 @@ func TestCallback(t *testing.T) {
 			queryParams:    "code=auth-code&state=SESSION_KEY_PLACEHOLDER",
 			expectedStatus: http.StatusBadRequest,
 			retrieveError:  true,
+		},
+		{
+			name:           "host mismatch",
+			setupSession:   true,
+			setCookie:      true,
+			queryParams:    "code=auth-code&state=SESSION_KEY_PLACEHOLDER",
+			expectedStatus: http.StatusBadRequest,
+			requestHost:    "different.com",
 		},
 		{
 			name:             "session store error in callback",
@@ -786,7 +796,11 @@ func TestCallback(t *testing.T) {
 			// Replace placeholder with actual session key for query params
 			queryParams := strings.Replace(tt.queryParams, "SESSION_KEY_PLACEHOLDER", sessionKey, 1)
 			req := httptest.NewRequest(http.MethodGet, pathCallback+"?"+queryParams, nil)
-			req.Host = "example.com"
+			if tt.requestHost != "" {
+				req.Host = tt.requestHost
+			} else {
+				req.Host = "example.com"
+			}
 
 			if tt.setCookie {
 				req.Header.Set("Cookie", fmt.Sprintf("%s=%s", stateCookieName, sessionKey))
@@ -808,6 +822,7 @@ func TestToken(t *testing.T) {
 		formData       string
 		expectedStatus int
 		checkResponse  bool
+		requestHost    string
 	}{
 		{
 			name:           "invalid form data",
@@ -825,6 +840,13 @@ func TestToken(t *testing.T) {
 			setupSession:   true,
 			formData:       "code=valid-code&code_verifier=wrong-verifier",
 			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "host mismatch",
+			setupSession:   true,
+			formData:       "code=valid-code&code_verifier=test-verifier",
+			expectedStatus: http.StatusBadRequest,
+			requestHost:    "different.com",
 		},
 		{
 			name:           "successful token exchange",
@@ -876,6 +898,11 @@ func TestToken(t *testing.T) {
 
 			req := httptest.NewRequest(http.MethodPost, pathToken, strings.NewReader(tt.formData))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if tt.requestHost != "" {
+				req.Host = tt.requestHost
+			} else {
+				req.Host = "example.com"
+			}
 			rec := httptest.NewRecorder()
 
 			api.ServeHTTP(rec, req)

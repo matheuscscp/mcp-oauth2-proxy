@@ -7,11 +7,13 @@ import (
 
 // transaction represents an OAuth 2.0 authorization request.
 // It contains the client parameters required for the authorization
-// flows that must be supported by the proxy and the code verifier
-// for PKCE with the configured IdP.
+// flows that must be supported by the proxy, the code verifier
+// for PKCE with the configured IdP, and the host of the proxy
+// that is handling the request.
 type transaction struct {
 	clientParams transactionClientParams
 	codeVerifier string
+	host         string
 }
 
 type transactionClientParams struct {
@@ -21,6 +23,8 @@ type transactionClientParams struct {
 }
 
 func newTransaction(conf *proxyConfig, r *http.Request, codeVerifier string) (*transaction, error) {
+	host := r.Host
+
 	q := r.URL.Query()
 	codeChallenge := q.Get(queryParamCodeChallenge)
 	redirectURI := q.Get(queryParamRedirectURI)
@@ -37,5 +41,6 @@ func newTransaction(conf *proxyConfig, r *http.Request, codeVerifier string) (*t
 			state:         state,
 		},
 		codeVerifier: codeVerifier,
+		host:         host,
 	}, nil
 }
