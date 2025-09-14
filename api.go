@@ -172,6 +172,11 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 			return
 		}
 
+		if tx.host != r.Host {
+			http.Error(w, "Host mismatch", http.StatusBadRequest)
+			return
+		}
+
 		// Exchange authorization code for tokens.
 		oauth2Conf := oauth2Config(r, p, conf)
 		oauth2Conf.ClientSecret = conf.Provider.ClientSecret
@@ -243,6 +248,11 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 		s, ok := sessionStore.retrieve(authzCode)
 		if !ok {
 			http.Error(w, "Authorization code expired", http.StatusBadRequest)
+			return
+		}
+
+		if s.tx.host != r.Host {
+			http.Error(w, "Host mismatch", http.StatusBadRequest)
 			return
 		}
 
