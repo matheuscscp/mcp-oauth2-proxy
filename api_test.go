@@ -296,18 +296,6 @@ func TestAuthenticate(t *testing.T) {
 			if tt.expectedWWWAuth {
 				g.Expect(rec.Header().Get("WWW-Authenticate")).To(ContainSubstring("Bearer realm="))
 			}
-			if tt.expectedAccessToken {
-				// Assert access token header is set
-				g.Expect(rec.Header().Get(responseHeaderAccessToken)).To(Equal(bearerToken))
-
-				// Parse and validate JWT claims - use the same tokenIssuer's public keys
-				publicKeys := tokenIssuer.publicKeys(time.Now())
-				g.Expect(publicKeys).To(HaveLen(1))
-				token := parseJWT(g, bearerToken, publicKeys[0])
-
-				// Assert JWT claims
-				assertJWTClaims(g, token, "https://example.com", "test-user", "https://example.com")
-			}
 		})
 	}
 }

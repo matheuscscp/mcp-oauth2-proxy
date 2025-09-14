@@ -58,8 +58,7 @@ flowchart TB
 5. **MCP Access**: AI client uses the JWT token to access MCP servers through the reverse proxy
 6. **Request Routing**: Reverse proxy routes requests to appropriate MCP servers based on the Host header
 7. **Token Validation**: For each MCP request, the reverse proxy calls `/authenticate` to validate the bearer token
-8. **Secure Token Passing**: mcp-oauth2-proxy validates the token and returns it via `X-Auth-Request-Access-Token` header if valid
-9. **MCP Server Access**: Reverse proxy forwards the request to the MCP server with the validated token
+8. **MCP Server Access**: Reverse proxy forwards the request to the MCP server with the validated token
 
 ### API Endpoints
 
@@ -69,8 +68,6 @@ mcp-oauth2-proxy exposes the following HTTP endpoints:
 - **`/authenticate`** - Token validation endpoint used by reverse proxy
   - **Input Headers**:
     - `Authorization: Bearer <jwt-token>` - JWT token issued by mcp-oauth2-proxy
-  - **Output Headers** (on success - HTTP 200):
-    - `X-Auth-Request-Access-Token: <jwt-token>` - Validated JWT token for forwarding
   - **Output Headers** (on failure - HTTP 401):
     - `WWW-Authenticate: Bearer realm="mcp-oauth2-proxy", resource_metadata="<base-url>/.well-known/oauth-protected-resource"`
 
@@ -174,7 +171,9 @@ spec:
                   name: http
 ```
 
-The key difference from traditional oauth2-proxy integration is that mcp-oauth2-proxy only requires the `auth-url` annotation. The `/authenticate` endpoint handles token validation and returns the validated token via the `X-Auth-Request-Access-Token` header when authentication succeeds, or returns 401 with `WWW-Authenticate` header when authentication fails.
+The key difference from traditional oauth2-proxy integration is that mcp-oauth2-proxy only requires the
+`auth-url` annotation. The `/authenticate` endpoint handles token validation. If the token is not present
+or is invalid, it returns 401 with the `WWW-Authenticate` header.
 
 ### Key Configuration Options
 
