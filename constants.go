@@ -8,6 +8,8 @@ const (
 	queryParamCodeChallengeMethod = "code_challenge_method"
 	queryParamCodeVerifier        = "code_verifier"
 	queryParamRedirectURI         = "redirect_uri"
+	queryParamResponseType        = "response_type"
+	queryParamScopes              = "scopes"
 	queryParamState               = "state"
 
 	authorizationServerCodeChallengeMethod     = "S256"

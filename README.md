@@ -177,14 +177,20 @@ or is invalid, it returns 401 with the `WWW-Authenticate` header.
 
 ### Key Configuration Options
 
-- `provider.name`: OAuth2 provider (`google` or `github`)
-- `provider.clientID`: OAuth2 client ID from your IdP
-- `provider.clientSecret`: OAuth2 client secret from your IdP  
-- `provider.allowedEmailDomains`: List of Go regular expressions for allowed email domains
-- `proxy.allowedRedirectURLs`: List of Go regular expressions for allowed redirect URLs
-- `server.cors`: Enable CORS support
-- `ingress.enabled`: Enable ingress for external access
-- `podMonitor.enabled`: Enable Prometheus monitoring
+- `provider.name`: OAuth2 provider. One of [`google`, `github`]. Defaults to `google`.
+- `provider.clientID`: OAuth2 client ID from your IdP.
+- `provider.clientSecret`: OAuth2 client secret from your IdP.
+- `provider.allowedEmailDomains` (optional): List of Go regular expressions for allowed email domains.
+- `proxy.allowedRedirectURLs` (optional): List of Go regular expressions for allowed redirect URLs.
+- `proxy.hosts`: List of MCP server hosts.
+- `proxy.hosts[].host`: The HTTP Host header identifying the MCP server.
+- `proxy.hosts[].scopes` (optional): List of scopes for the MCP server (optional).
+- `proxy.hosts[].scopes[].name`: Name of the scope.
+- `proxy.hosts[].scopes[].description`: Description of the scope.
+- `proxy.hosts[].scopes[].covers` (optional): List of scopes this scope already covers.
+- `server.cors` (optional): Enable CORS support. One of `true` or `false`. Defaults to `false`.
+- `ingress.enabled` (optional): Enable ingress for external access. One of `true` or `false`. Defaults to `false`.
+- `podMonitor.enabled` (optional): Enable Prometheus monitoring. One of `true` or `false`. Defaults to `false`.
 
 ## Roadmap
 

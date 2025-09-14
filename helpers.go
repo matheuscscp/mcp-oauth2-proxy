@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 )
 
@@ -49,10 +48,10 @@ func respondWWWAuthenticate(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, http.StatusText(status), status)
 }
 
-func respondJSON(w http.ResponseWriter, status int, payload any) {
+func respondJSON(w http.ResponseWriter, r *http.Request, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
-		logrus.WithError(err).Error("failed to write response")
+		fromRequest(r).WithError(err).Error("failed to write response")
 	}
 }

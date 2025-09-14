@@ -281,7 +281,7 @@ func TestAuthenticate(t *testing.T) {
 			bearerToken := tt.bearerToken
 			if tt.useValidToken {
 				// Issue a valid token for this test
-				validToken, _, err := tokenIssuer.issue("https://example.com", "test-user", "https://example.com", time.Now())
+				validToken, _, err := tokenIssuer.issue("https://example.com", "test-user", "https://example.com", time.Now(), nil)
 				g.Expect(err).ToNot(HaveOccurred())
 				bearerToken = validToken
 			}
@@ -494,35 +494,49 @@ func TestRegister(t *testing.T) {
 
 func TestAuthorize(t *testing.T) {
 	tests := []struct {
-		name           string
-		queryParams    string
-		expectedStatus int
-		expectRedirect bool
-		expectError    bool
-		sessionStore   sessionStore
-		pkceError      bool
-		config         *config
+		name                      string
+		queryParams               string
+		expectedStatus            int
+		expectRedirect            bool
+		expectError               bool
+		expectedErrorMessage      string
+		sessionStore              sessionStore
+		pkceError                 bool
+		config                    *config
+		expectScopeSelectionPage  bool
+		expectScopeTransaction    bool
 	}{
 		{
-			name:           "unsupported code challenge method",
-			queryParams:    "code_challenge_method=plain",
-			expectedStatus: http.StatusBadRequest,
-			expectError:    true,
+			name:                 "unsupported code challenge method",
+			queryParams:          "response_type=code&code_challenge_method=plain&redirect_uri=https://example.com/callback&state=test-state",
+			expectedStatus:       http.StatusBadRequest,
+			expectError:          true,
+			expectedErrorMessage: "Invalid parameters: 'plain' is not supported for code_challenge_method, only S256 is allowed",
 		},
 		{
-			name:           "missing code_challenge_method",
-			queryParams:    "redirect_uri=https://example.com/callback&state=test-state",
-			expectedStatus: http.StatusBadRequest,
+			name:                 "unsupported response type",
+			queryParams:          "response_type=plain&code_challenge_method=S256&redirect_uri=https://example.com/callback&state=test-state",
+			expectedStatus:       http.StatusBadRequest,
+			expectError:          true,
+			expectedErrorMessage: "Invalid parameters: 'plain' is not supported for response_type, only code is allowed",
 		},
 		{
-			name:           "empty code_challenge_method",
-			queryParams:    "code_challenge_method=&redirect_uri=https://example.com/callback&state=test-state",
-			expectedStatus: http.StatusBadRequest,
+			name:                 "missing code_challenge_method",
+			queryParams:          "response_type=code&redirect_uri=https://example.com/callback&state=test-state",
+			expectedStatus:       http.StatusBadRequest,
+			expectedErrorMessage: "Invalid parameters: '' is not supported for code_challenge_method, only S256 is allowed",
 		},
 		{
-			name:           "invalid redirect URL",
-			queryParams:    fmt.Sprintf("code_challenge_method=%s&redirect_uri=https://evil.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
-			expectedStatus: http.StatusBadRequest,
+			name:                 "empty code_challenge_method",
+			queryParams:          "response_type=code&code_challenge_method=&redirect_uri=https://example.com/callback&state=test-state",
+			expectedStatus:       http.StatusBadRequest,
+			expectedErrorMessage: "Invalid parameters: '' is not supported for code_challenge_method, only S256 is allowed",
+		},
+		{
+			name:                 "invalid redirect URL",
+			queryParams:          fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://evil.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
+			expectedStatus:       http.StatusBadRequest,
+			expectedErrorMessage: "Invalid parameters: redirect_uri is not in the allow list: https://evil.com/callback",
 			config: &config{
 				Provider: providerConfig{
 					ClientID:     "test-client-id",
@@ -537,22 +551,94 @@ func TestAuthorize(t *testing.T) {
 			},
 		},
 		{
-			name:           "session store error",
-			queryParams:    fmt.Sprintf("code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
-			expectedStatus: http.StatusInternalServerError,
-			sessionStore:   &mockSessionStore{sessionStore: newMemorySessionStore(), storeTransactionError: errors.New("session store failure")},
+			name:                 "session store error",
+			queryParams:          fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
+			expectedStatus:       http.StatusInternalServerError,
+			expectedErrorMessage: "Failed to generate state",
+			sessionStore:         &mockSessionStore{sessionStore: newMemorySessionStore(), storeTransactionError: errors.New("session store failure")},
 		},
 		{
-			name:           "PKCE generation error",
-			queryParams:    fmt.Sprintf("code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
-			expectedStatus: http.StatusInternalServerError,
-			pkceError:      true,
+			name:                 "PKCE generation error",
+			queryParams:          fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
+			expectedStatus:       http.StatusInternalServerError,
+			expectedErrorMessage: "Failed to generate code verifier",
+			pkceError:            true,
 		},
 		{
 			name:           "valid authorize request",
-			queryParams:    fmt.Sprintf("code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
+			queryParams:    fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
 			expectedStatus: http.StatusSeeOther,
 			expectRedirect: true,
+		},
+		{
+			name:                     "scope selection page rendered",
+			queryParams:              fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
+			expectedStatus:           http.StatusOK,
+			expectRedirect:           false,
+			expectScopeSelectionPage: true,
+			config: &config{
+				Provider: providerConfig{
+					ClientID:     "test-client-id",
+					ClientSecret: "test-client-secret",
+				},
+				Proxy: proxyConfig{
+					Hosts: []hostConfig{
+						{
+							Host: "example.com",
+							Scopes: []scopeConfig{
+								{
+									Name:        "read",
+									Description: "Read access to resources",
+									Covers:      []string{},
+								},
+								{
+									Name:        "write",
+									Description: "Write access to resources",
+									Covers:      []string{"read"},
+								},
+							},
+						},
+					},
+				},
+				Server: serverConfig{
+					Addr: "localhost:8080",
+				},
+			},
+		},
+		{
+			name:                   "authorize with selected scopes",
+			queryParams:            fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state&scopes=read%%20write&skip_scope_selection=true", authorizationServerCodeChallengeMethod),
+			expectedStatus:         http.StatusSeeOther,
+			expectRedirect:         true,
+			expectScopeTransaction: true,
+			config: &config{
+				Provider: providerConfig{
+					ClientID:     "test-client-id",
+					ClientSecret: "test-client-secret",
+				},
+				Proxy: proxyConfig{
+					Hosts: []hostConfig{
+						{
+							Host: "example.com",
+							Scopes: []scopeConfig{
+								{
+									Name:        "read",
+									Description: "Read access to resources",
+									Covers:      []string{},
+								},
+								{
+									Name:        "write",
+									Description: "Write access to resources",
+									Covers:      []string{"read"},
+								},
+							},
+						},
+					},
+				},
+				Server: serverConfig{
+					Addr: "localhost:8080",
+				},
+			},
 		},
 	}
 
@@ -587,10 +673,37 @@ func TestAuthorize(t *testing.T) {
 
 			g.Expect(rec.Code).To(Equal(tt.expectedStatus))
 
+			if tt.expectedErrorMessage != "" {
+				g.Expect(rec.Body.String()).To(ContainSubstring(tt.expectedErrorMessage))
+			}
+
 			if tt.expectRedirect {
 				location := rec.Header().Get("Location")
 				g.Expect(location).To(ContainSubstring("https://example.com/auth"))
 				g.Expect(rec.Header().Get("Set-Cookie")).To(ContainSubstring(stateCookieName))
+			}
+
+			// Check for scope selection page
+			if tt.expectScopeSelectionPage {
+				g.Expect(rec.Header().Get("Content-Type")).To(Equal("text/html; charset=utf-8"))
+				body := rec.Body.String()
+				g.Expect(body).To(ContainSubstring("Select Permissions"))
+				g.Expect(body).To(ContainSubstring("example.com"))
+				g.Expect(body).To(ContainSubstring("read"))
+				g.Expect(body).To(ContainSubstring("write"))
+				g.Expect(body).To(ContainSubstring("Read access to resources"))
+				g.Expect(body).To(ContainSubstring("Write access to resources"))
+			}
+
+			// Check for authorize with scopes transaction
+			if tt.expectScopeTransaction {
+				// Should redirect to OAuth provider
+				location := rec.Header().Get("Location")
+				g.Expect(location).To(ContainSubstring("https://example.com/auth"))
+				g.Expect(rec.Header().Get("Set-Cookie")).To(ContainSubstring(stateCookieName))
+				
+				// Verify that the transaction was created and stored (this is verified by the successful redirect)
+				// The actual scope verification will happen when the transaction is retrieved during callback
 			}
 		})
 	}
@@ -860,7 +973,7 @@ func TestToken(t *testing.T) {
 				now := time.Now()
 				var exp time.Time
 				var err error
-				jwtToken, exp, err = tokenIssuer.issue("https://example.com", "test-user@example.com", "mcp-oauth2-proxy", now)
+				jwtToken, exp, err = tokenIssuer.issue("https://example.com", "test-user@example.com", "mcp-oauth2-proxy", now, nil)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				// Create outcome with real JWT token
