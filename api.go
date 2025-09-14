@@ -37,7 +37,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 		token := bearerToken(r)
 
 		iss := baseURL(r)
-		aud := mcpOAuth2Proxy
+		aud := baseURL(r)
 		if !ti.verify(token, nowFunc(), iss, aud) {
 			respondWWWAuthenticate(w, r)
 			return
@@ -67,7 +67,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 			"grant_types_supported":                 []string{authorizationServerGrantType},
 			"response_modes_supported":              []string{authorizationServerResponseMode},
 			"response_types_supported":              []string{authorizationServerResponseType},
-			"scopes_supported":                      []string{authorizationServerScope},
+			"scopes_supported":                      []string{authorizationServerDefaultScope},
 			"token_endpoint_auth_methods_supported": []string{authorizationServerTokenEndpointAuthMethod},
 		})
 	})
@@ -198,12 +198,12 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 		// Issue an access token in the proxy realm.
 		iss := baseURL(r)
 		sub := user
-		aud := mcpOAuth2Proxy
+		aud := baseURL(r)
 		now := nowFunc()
 		accessToken, exp, err := ti.issue(iss, sub, aud, now)
 		if err != nil {
-			l.WithError(err).Error(fmt.Sprintf("failed to issue %s access token", mcpOAuth2Proxy))
-			http.Error(w, fmt.Sprintf("Failed to issue %s access token", mcpOAuth2Proxy), http.StatusInternalServerError)
+			l.WithError(err).Error("failed to issue access token")
+			http.Error(w, "Failed to issue access token", http.StatusInternalServerError)
 			return
 		}
 

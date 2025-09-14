@@ -187,11 +187,6 @@ func newTestTokenIssuerWithSharedKeys() (*tokenIssuer, jwk.Key, jwk.Key) {
 	return &tokenIssuer{keySource}, privateKey, publicKey
 }
 
-func fixedTimeFunc() func() time.Time {
-	fixedTime := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
-	return func() time.Time { return fixedTime }
-}
-
 // parseJWT parses and validates a JWT token using the given public key
 func parseJWT(g *WithT, tokenString string, publicKey jwk.Key) jwt.Token {
 	token, err := jwt.Parse([]byte(tokenString), jwt.WithKey(issuerAlgorithm(), publicKey), jwt.WithValidate(true))
@@ -286,7 +281,7 @@ func TestAuthenticate(t *testing.T) {
 			bearerToken := tt.bearerToken
 			if tt.useValidToken {
 				// Issue a valid token for this test
-				validToken, _, err := tokenIssuer.issue("https://example.com", "test-user", "mcp-oauth2-proxy", time.Now())
+				validToken, _, err := tokenIssuer.issue("https://example.com", "test-user", "https://example.com", time.Now())
 				g.Expect(err).ToNot(HaveOccurred())
 				bearerToken = validToken
 			}
@@ -311,7 +306,7 @@ func TestAuthenticate(t *testing.T) {
 				token := parseJWT(g, bearerToken, publicKeys[0])
 
 				// Assert JWT claims
-				assertJWTClaims(g, token, "https://example.com", "test-user", "mcp-oauth2-proxy")
+				assertJWTClaims(g, token, "https://example.com", "test-user", "https://example.com")
 			}
 		})
 	}
@@ -376,7 +371,7 @@ func TestOAuthAuthorizationServer(t *testing.T) {
 	g.Expect(response["grant_types_supported"]).To(Equal([]any{authorizationServerGrantType}))
 	g.Expect(response["response_modes_supported"]).To(Equal([]any{authorizationServerResponseMode}))
 	g.Expect(response["response_types_supported"]).To(Equal([]any{authorizationServerResponseType}))
-	g.Expect(response["scopes_supported"]).To(Equal([]any{authorizationServerScope}))
+	g.Expect(response["scopes_supported"]).To(Equal([]any{authorizationServerDefaultScope}))
 	g.Expect(response["token_endpoint_auth_methods_supported"]).To(Equal([]any{authorizationServerTokenEndpointAuthMethod}))
 }
 
