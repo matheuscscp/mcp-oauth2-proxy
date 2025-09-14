@@ -494,17 +494,17 @@ func TestRegister(t *testing.T) {
 
 func TestAuthorize(t *testing.T) {
 	tests := []struct {
-		name                      string
-		queryParams               string
-		expectedStatus            int
-		expectRedirect            bool
-		expectError               bool
-		expectedErrorMessage      string
-		sessionStore              sessionStore
-		pkceError                 bool
-		config                    *config
-		expectScopeSelectionPage  bool
-		expectScopeTransaction    bool
+		name                     string
+		queryParams              string
+		expectedStatus           int
+		expectRedirect           bool
+		expectError              bool
+		expectedErrorMessage     string
+		sessionStore             sessionStore
+		pkceError                bool
+		config                   *config
+		expectScopeSelectionPage bool
+		expectScopeTransaction   bool
 	}{
 		{
 			name:                 "unsupported code challenge method",
@@ -607,7 +607,7 @@ func TestAuthorize(t *testing.T) {
 		},
 		{
 			name:                   "authorize with selected scopes",
-			queryParams:            fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state&scopes=read%%20write&skip_scope_selection=true", authorizationServerCodeChallengeMethod),
+			queryParams:            fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state&scope=read%%20write&skip_scope_selection=true", authorizationServerCodeChallengeMethod),
 			expectedStatus:         http.StatusSeeOther,
 			expectRedirect:         true,
 			expectScopeTransaction: true,
@@ -701,7 +701,7 @@ func TestAuthorize(t *testing.T) {
 				location := rec.Header().Get("Location")
 				g.Expect(location).To(ContainSubstring("https://example.com/auth"))
 				g.Expect(rec.Header().Get("Set-Cookie")).To(ContainSubstring(stateCookieName))
-				
+
 				// Verify that the transaction was created and stored (this is verified by the successful redirect)
 				// The actual scope verification will happen when the transaction is retrieved during callback
 			}
