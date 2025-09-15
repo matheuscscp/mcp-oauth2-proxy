@@ -505,6 +505,8 @@ func TestAuthorize(t *testing.T) {
 		config                   *config
 		expectScopeSelectionPage bool
 		expectScopeTransaction   bool
+		expectValidatedScopes    bool
+		expectedFilteredScopes   []string
 	}{
 		{
 			name:                 "unsupported code challenge method",
@@ -640,6 +642,43 @@ func TestAuthorize(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:                   "scope validation filters unsupported scopes",
+			queryParams:            fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state&scope=read%%20invalid%%20write&skip_scope_selection=true", authorizationServerCodeChallengeMethod),
+			expectedStatus:         http.StatusSeeOther,
+			expectRedirect:         true,
+			expectScopeTransaction: true,
+			expectValidatedScopes:  true,
+			expectedFilteredScopes: []string{"read", "write"},
+			config: &config{
+				Provider: providerConfig{
+					ClientID:     "test-client-id",
+					ClientSecret: "test-client-secret",
+				},
+				Proxy: proxyConfig{
+					Hosts: []hostConfig{
+						{
+							Host: "example.com",
+							Scopes: []scopeConfig{
+								{
+									Name:        "read",
+									Description: "Read access to resources",
+									Covers:      []string{},
+								},
+								{
+									Name:        "write",
+									Description: "Write access to resources",
+									Covers:      []string{"read"},
+								},
+							},
+						},
+					},
+				},
+				Server: serverConfig{
+					Addr: "localhost:8080",
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -704,6 +743,28 @@ func TestAuthorize(t *testing.T) {
 
 				// Verify that the transaction was created and stored (this is verified by the successful redirect)
 				// The actual scope verification will happen when the transaction is retrieved during callback
+			}
+
+			// Check scope validation if expected
+			if tt.expectValidatedScopes {
+				// Extract the state cookie to retrieve the stored transaction
+				cookies := rec.Header().Values("Set-Cookie")
+				var stateValue string
+				for _, cookie := range cookies {
+					if strings.HasPrefix(cookie, stateCookieName+"=") {
+						parts := strings.Split(cookie, "=")
+						if len(parts) > 1 {
+							stateValue = strings.Split(parts[1], ";")[0]
+							break
+						}
+					}
+				}
+				g.Expect(stateValue).ToNot(BeEmpty())
+
+				// Retrieve the stored transaction and verify scopes were filtered
+				tx, found := sessionStore.retrieveTransaction(stateValue)
+				g.Expect(found).To(BeTrue())
+				g.Expect(tx.clientParams.scopes).To(Equal(tt.expectedFilteredScopes))
 			}
 		})
 	}

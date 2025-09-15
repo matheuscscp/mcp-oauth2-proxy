@@ -32,9 +32,15 @@ func newTransaction(conf *proxyConfig, r *http.Request, codeVerifier string) (*t
 	redirectURI := q.Get(queryParamRedirectURI)
 	state := q.Get(queryParamState)
 
+	hostScopes, _ := conf.supportedScopes(r.Host)
+	supportedScopes := make(map[string]bool, len(hostScopes))
+	for _, s := range hostScopes {
+		supportedScopes[s] = true
+	}
+
 	scopes := []string{}
 	for s := range strings.SplitSeq(q.Get(queryParamScopes), " ") {
-		if s != "" {
+		if s != "" && supportedScopes[s] {
 			scopes = append(scopes, s)
 		}
 	}
