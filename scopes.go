@@ -4,7 +4,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"net/http"
-	"slices"
 	"strings"
 )
 
@@ -18,34 +17,39 @@ func respondScopeSelectionPage(w http.ResponseWriter, r *http.Request, scopes []
 		Description string   `json:"description"`
 		CoveredBy   []string `json:"coveredBy"`
 	}
-	coveredByMapToSet := make(map[string]map[string]struct{})
+	toolsCoveredByScope := make(map[string]map[string]struct{})
 	for _, s := range scopes {
-		for _, c := range s.Covers {
-			if _, ok := coveredByMapToSet[c]; !ok {
-				coveredByMapToSet[c] = make(map[string]struct{})
+		toolsCovered := make(map[string]struct{})
+		for _, t := range s.Tools {
+			toolsCovered[t] = struct{}{}
+		}
+		toolsCoveredByScope[s.Name] = toolsCovered
+	}
+	scopesForWebpage := make([]scopeConfigForWebpage, 0, len(scopes))
+	for i, a := range scopes {
+		scope := scopeConfigForWebpage{
+			Name:        a.Name,
+			Description: a.Description,
+		}
+		for j, b := range scopes {
+			if i == j {
+				continue
 			}
-			coveredByMapToSet[c][s.Name] = struct{}{}
+			aCoveredByB := true
+			for toolCoveredByA := range toolsCoveredByScope[a.Name] {
+				if _, ok := toolsCoveredByScope[b.Name][toolCoveredByA]; !ok {
+					aCoveredByB = false
+					break
+				}
+			}
+			if aCoveredByB {
+				scope.CoveredBy = append(scope.CoveredBy, b.Name)
+			}
 		}
+		scopesForWebpage = append(scopesForWebpage, scope)
 	}
-	coveredByMap := make(map[string][]string, len(coveredByMapToSet))
-	for k, v := range coveredByMapToSet {
-		for name := range v {
-			coveredByMap[k] = append(coveredByMap[k], name)
-		}
-		slices.Sort(coveredByMap[k])
-	}
-	scopesForWebpage := make([]scopeConfigForWebpage, len(scopes))
-	for i, s := range scopes {
-		coveredBy := coveredByMap[s.Name]
-		if len(coveredBy) == 0 {
-			coveredBy = []string{}
-		}
-		scopesForWebpage[i] = scopeConfigForWebpage{
-			Name:        s.Name,
-			Description: s.Description,
-			CoveredBy:   coveredBy,
-		}
-	}
+
+	// Marshal scopes for webpage.
 	b, err := json.Marshal(scopesForWebpage)
 	if err != nil {
 		fromRequest(r).WithError(err).Error("failed to marshal scopes for webpage")

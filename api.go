@@ -53,7 +53,12 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 	})
 
 	mux.HandleFunc(pathOAuthAuthorizationServer, func(w http.ResponseWriter, r *http.Request) {
-		supportedScopes, _ := conf.Proxy.supportedScopes(r.Host)
+		supportedScopes, _, err := conf.Proxy.supportedScopes(r.Context(), r.Host)
+		if err != nil {
+			fromRequest(r).WithError(err).Error("failed to get supported scopes")
+			http.Error(w, "Failed to get supported scopes", http.StatusInternalServerError)
+			return
+		}
 		respondJSON(w, r, http.StatusOK, map[string]any{
 			"issuer":                                baseURL(r),
 			"authorization_endpoint":                fmt.Sprintf("%s%s", baseURL(r), pathAuthorize),
@@ -114,8 +119,15 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 	mux.HandleFunc(pathAuthorize, func(w http.ResponseWriter, r *http.Request) {
 		l := fromRequest(r)
 
-		// Render scope selection page.
-		_, supportedScopes := conf.Proxy.supportedScopes(r.Host)
+		// Fetch supported scopes for the host.
+		supportedScopeNames, supportedScopes, err := conf.Proxy.supportedScopes(r.Context(), r.Host)
+		if err != nil {
+			l.WithError(err).Error("failed to get supported scopes")
+			http.Error(w, "Failed to get supported scopes", http.StatusInternalServerError)
+			return
+		}
+
+		// Render scope selection page if necessary.
 		if !r.URL.Query().Has("skip_scope_selection") && len(supportedScopes) > 0 {
 			respondScopeSelectionPage(w, r, supportedScopes)
 			return
@@ -130,7 +142,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 		}
 		codeChallenge := pkceS256Challenge(codeVerifier)
 
-		tx, err := newTransaction(&conf.Proxy, r, codeVerifier)
+		tx, err := newTransaction(&conf.Proxy, r, codeVerifier, supportedScopeNames)
 		if err != nil {
 			l.WithError(err).Error("invalid transaction")
 			http.Error(w, fmt.Sprintf("Invalid parameters: %v", err), http.StatusBadRequest)
