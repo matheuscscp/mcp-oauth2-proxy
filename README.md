@@ -184,10 +184,7 @@ or is invalid, it returns 401 with the `WWW-Authenticate` header.
 - `proxy.allowedRedirectURLs` (optional): List of Go regular expressions for allowed redirect URLs.
 - `proxy.hosts`: List of MCP server hosts.
 - `proxy.hosts[].host`: The HTTP Host header identifying the MCP server.
-- `proxy.hosts[].scopes` (optional): List of scopes for the MCP server (optional).
-- `proxy.hosts[].scopes[].name`: Name of the scope.
-- `proxy.hosts[].scopes[].description`: Description of the scope.
-- `proxy.hosts[].scopes[].covers` (optional): List of scopes this scope already covers.
+- `proxy.hosts[].endpoint`: The endpoint for the MCP server. Will be used for listing tools.
 - `server.cors` (optional): Enable CORS support. One of `true` or `false`. Defaults to `false`.
 - `ingress.enabled` (optional): Enable ingress for external access. One of `true` or `false`. Defaults to `false`.
 - `podMonitor.enabled` (optional): Enable Prometheus monitoring. One of `true` or `false`. Defaults to `false`.

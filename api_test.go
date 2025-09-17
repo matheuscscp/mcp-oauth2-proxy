@@ -16,9 +16,58 @@ import (
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
 	. "github.com/onsi/gomega"
 	"golang.org/x/oauth2"
 )
+
+// createMockMCPServer creates a test MCP server with scopes metadata
+func createMockMCPServer(scopes []scopeConfig) *httptest.Server {
+	mcpServer := server.NewMCPServer("test-mcp-server", "1.0.0",
+		server.WithToolCapabilities(true),
+		server.WithHooks(&server.Hooks{
+			OnAfterListTools: []server.OnAfterListToolsFunc{
+				func(ctx context.Context, id any, message *mcp.ListToolsRequest, result *mcp.ListToolsResult) {
+					// Add scopes to the metadata
+					if result.Meta == nil {
+						result.Meta = &mcp.Meta{
+							AdditionalFields: make(map[string]interface{}),
+						}
+					}
+					result.Meta.AdditionalFields["scopes"] = scopes
+				},
+			},
+		}),
+	)
+
+	// Create and return the test server
+	return server.NewTestStreamableHTTPServer(mcpServer)
+}
+
+// createMockMCPServerWithBogusJSON creates a test MCP server that returns invalid JSON in metadata
+func createMockMCPServerWithBogusJSON() *httptest.Server {
+	mcpServer := server.NewMCPServer("test-mcp-server", "1.0.0",
+		server.WithToolCapabilities(true),
+		server.WithHooks(&server.Hooks{
+			OnAfterListTools: []server.OnAfterListToolsFunc{
+				func(ctx context.Context, id any, message *mcp.ListToolsRequest, result *mcp.ListToolsResult) {
+					// Add invalid data that will cause JSON unmarshaling to fail
+					if result.Meta == nil {
+						result.Meta = &mcp.Meta{
+							AdditionalFields: make(map[string]interface{}),
+						}
+					}
+					// Create a struct that will marshal to JSON but unmarshal incorrectly
+					result.Meta.AdditionalFields["scopes"] = "this is not a valid scope array"
+				},
+			},
+		}),
+	)
+
+	// Create and return the test server
+	return server.NewTestStreamableHTTPServer(mcpServer)
+}
 
 // mockProvider implements the provider interface for testing
 type mockProvider struct {
@@ -331,36 +380,78 @@ func TestOAuthProtectedResource(t *testing.T) {
 }
 
 func TestOAuthAuthorizationServer(t *testing.T) {
-	g := NewWithT(t)
+	tests := []struct {
+		name           string
+		config         *config
+		expectedStatus int
+		checkResponse  bool
+	}{
+		{
+			name:           "successful response with default scopes",
+			config:         newTestConfig(),
+			expectedStatus: http.StatusOK,
+			checkResponse:  true,
+		},
+		{
+			name: "error fetching supported scopes from invalid MCP endpoint",
+			config: &config{
+				Provider: providerConfig{
+					ClientID:     "test-client-id",
+					ClientSecret: "test-client-secret",
+				},
+				Proxy: proxyConfig{
+					Hosts: []hostConfig{
+						{
+							Host:     "example.com",
+							Endpoint: "http://invalid-endpoint-that-does-not-exist:99999",
+						},
+					},
+				},
+				Server: serverConfig{
+					Addr: "localhost:8080",
+				},
+			},
+			expectedStatus: http.StatusInternalServerError,
+			checkResponse:  false,
+		},
+	}
 
-	tokenIssuer := newTestTokenIssuer(nil)
-	mockProv := &mockProvider{}
-	conf := newTestConfig()
-	sessionStore := newMemorySessionStore()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
 
-	api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
+			tokenIssuer := newTestTokenIssuer(nil)
+			mockProv := &mockProvider{}
+			sessionStore := newMemorySessionStore()
 
-	req := httptest.NewRequest(http.MethodGet, pathOAuthAuthorizationServer, nil)
-	req.Host = "example.com"
-	rec := httptest.NewRecorder()
+			api := newAPI(tokenIssuer, mockProv, tt.config, sessionStore, time.Now)
 
-	api.ServeHTTP(rec, req)
+			req := httptest.NewRequest(http.MethodGet, pathOAuthAuthorizationServer, nil)
+			req.Host = "example.com"
+			rec := httptest.NewRecorder()
 
-	g.Expect(rec.Code).To(Equal(http.StatusOK))
-	g.Expect(rec.Header().Get("Content-Type")).To(Equal("application/json"))
+			api.ServeHTTP(rec, req)
 
-	response := parseJSONResponse(g, rec.Body.Bytes())
+			g.Expect(rec.Code).To(Equal(tt.expectedStatus))
 
-	g.Expect(response["issuer"]).To(Equal("https://example.com"))
-	g.Expect(response["authorization_endpoint"]).To(Equal("https://example.com" + pathAuthorize))
-	g.Expect(response["token_endpoint"]).To(Equal("https://example.com" + pathToken))
-	g.Expect(response["registration_endpoint"]).To(Equal("https://example.com" + pathRegister))
-	g.Expect(response["code_challenge_methods_supported"]).To(Equal([]any{authorizationServerCodeChallengeMethod}))
-	g.Expect(response["grant_types_supported"]).To(Equal([]any{authorizationServerGrantType}))
-	g.Expect(response["response_modes_supported"]).To(Equal([]any{authorizationServerResponseMode}))
-	g.Expect(response["response_types_supported"]).To(Equal([]any{authorizationServerResponseType}))
-	g.Expect(response["scopes_supported"]).To(Equal([]any{authorizationServerDefaultScope}))
-	g.Expect(response["token_endpoint_auth_methods_supported"]).To(Equal([]any{authorizationServerTokenEndpointAuthMethod}))
+			if tt.checkResponse {
+				g.Expect(rec.Header().Get("Content-Type")).To(Equal("application/json"))
+
+				response := parseJSONResponse(g, rec.Body.Bytes())
+
+				g.Expect(response["issuer"]).To(Equal("https://example.com"))
+				g.Expect(response["authorization_endpoint"]).To(Equal("https://example.com" + pathAuthorize))
+				g.Expect(response["token_endpoint"]).To(Equal("https://example.com" + pathToken))
+				g.Expect(response["registration_endpoint"]).To(Equal("https://example.com" + pathRegister))
+				g.Expect(response["code_challenge_methods_supported"]).To(Equal([]any{authorizationServerCodeChallengeMethod}))
+				g.Expect(response["grant_types_supported"]).To(Equal([]any{authorizationServerGrantType}))
+				g.Expect(response["response_modes_supported"]).To(Equal([]any{authorizationServerResponseMode}))
+				g.Expect(response["response_types_supported"]).To(Equal([]any{authorizationServerResponseType}))
+				g.Expect(response["scopes_supported"]).To(Equal([]any{authorizationServerDefaultScope}))
+				g.Expect(response["token_endpoint_auth_methods_supported"]).To(Equal([]any{authorizationServerTokenEndpointAuthMethod}))
+			}
+		})
+	}
 }
 
 func TestRegister(t *testing.T) {
@@ -573,11 +664,11 @@ func TestAuthorize(t *testing.T) {
 			expectRedirect: true,
 		},
 		{
-			name:                     "scope selection page rendered",
-			queryParams:              fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
-			expectedStatus:           http.StatusOK,
-			expectRedirect:           false,
-			expectScopeSelectionPage: true,
+			name:                 "error fetching supported scopes from invalid MCP endpoint",
+			queryParams:          fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
+			expectedStatus:       http.StatusInternalServerError,
+			expectError:          true,
+			expectedErrorMessage: "Failed to get supported scopes",
 			config: &config{
 				Provider: providerConfig{
 					ClientID:     "test-client-id",
@@ -586,19 +677,8 @@ func TestAuthorize(t *testing.T) {
 				Proxy: proxyConfig{
 					Hosts: []hostConfig{
 						{
-							Host: "example.com",
-							Scopes: []scopeConfig{
-								{
-									Name:        "read",
-									Description: "Read access to resources",
-									Covers:      []string{},
-								},
-								{
-									Name:        "write",
-									Description: "Write access to resources",
-									Covers:      []string{"read"},
-								},
-							},
+							Host:     "example.com",
+							Endpoint: "http://invalid-endpoint-that-does-not-exist:99999",
 						},
 					},
 				},
@@ -608,39 +688,82 @@ func TestAuthorize(t *testing.T) {
 			},
 		},
 		{
+			name:                     "scope selection page rendered",
+			queryParams:              fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
+			expectedStatus:           http.StatusOK,
+			expectRedirect:           false,
+			expectScopeSelectionPage: true,
+			config: func() *config {
+				// Create mock MCP server with scopes
+				mockMCP := createMockMCPServer([]scopeConfig{
+					{
+						Name:        "read",
+						Description: "Read access to resources",
+						Tools:       []string{},
+					},
+					{
+						Name:        "write",
+						Description: "Write access to resources",
+						Tools:       []string{"read"},
+					},
+				})
+				return &config{
+					Provider: providerConfig{
+						ClientID:     "test-client-id",
+						ClientSecret: "test-client-secret",
+					},
+					Proxy: proxyConfig{
+						Hosts: []hostConfig{
+							{
+								Host:     "example.com",
+								Endpoint: mockMCP.URL,
+							},
+						},
+					},
+					Server: serverConfig{
+						Addr: "localhost:8080",
+					},
+				}
+			}(),
+		},
+		{
 			name:                   "authorize with selected scopes",
 			queryParams:            fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state&scope=read%%20write&skip_scope_selection=true", authorizationServerCodeChallengeMethod),
 			expectedStatus:         http.StatusSeeOther,
 			expectRedirect:         true,
 			expectScopeTransaction: true,
-			config: &config{
-				Provider: providerConfig{
-					ClientID:     "test-client-id",
-					ClientSecret: "test-client-secret",
-				},
-				Proxy: proxyConfig{
-					Hosts: []hostConfig{
-						{
-							Host: "example.com",
-							Scopes: []scopeConfig{
-								{
-									Name:        "read",
-									Description: "Read access to resources",
-									Covers:      []string{},
-								},
-								{
-									Name:        "write",
-									Description: "Write access to resources",
-									Covers:      []string{"read"},
-								},
+			config: func() *config {
+				// Create mock MCP server with scopes
+				mockMCP := createMockMCPServer([]scopeConfig{
+					{
+						Name:        "read",
+						Description: "Read access to resources",
+						Tools:       []string{},
+					},
+					{
+						Name:        "write",
+						Description: "Write access to resources",
+						Tools:       []string{"read"},
+					},
+				})
+				return &config{
+					Provider: providerConfig{
+						ClientID:     "test-client-id",
+						ClientSecret: "test-client-secret",
+					},
+					Proxy: proxyConfig{
+						Hosts: []hostConfig{
+							{
+								Host:     "example.com",
+								Endpoint: mockMCP.URL,
 							},
 						},
 					},
-				},
-				Server: serverConfig{
-					Addr: "localhost:8080",
-				},
-			},
+					Server: serverConfig{
+						Addr: "localhost:8080",
+					},
+				}
+			}(),
 		},
 		{
 			name:                   "scope validation filters unsupported scopes",
@@ -650,34 +773,38 @@ func TestAuthorize(t *testing.T) {
 			expectScopeTransaction: true,
 			expectValidatedScopes:  true,
 			expectedFilteredScopes: []string{"read", "write"},
-			config: &config{
-				Provider: providerConfig{
-					ClientID:     "test-client-id",
-					ClientSecret: "test-client-secret",
-				},
-				Proxy: proxyConfig{
-					Hosts: []hostConfig{
-						{
-							Host: "example.com",
-							Scopes: []scopeConfig{
-								{
-									Name:        "read",
-									Description: "Read access to resources",
-									Covers:      []string{},
-								},
-								{
-									Name:        "write",
-									Description: "Write access to resources",
-									Covers:      []string{"read"},
-								},
+			config: func() *config {
+				// Create mock MCP server with scopes
+				mockMCP := createMockMCPServer([]scopeConfig{
+					{
+						Name:        "read",
+						Description: "Read access to resources",
+						Tools:       []string{},
+					},
+					{
+						Name:        "write",
+						Description: "Write access to resources",
+						Tools:       []string{"read"},
+					},
+				})
+				return &config{
+					Provider: providerConfig{
+						ClientID:     "test-client-id",
+						ClientSecret: "test-client-secret",
+					},
+					Proxy: proxyConfig{
+						Hosts: []hostConfig{
+							{
+								Host:     "example.com",
+								Endpoint: mockMCP.URL,
 							},
 						},
 					},
-				},
-				Server: serverConfig{
-					Addr: "localhost:8080",
-				},
-			},
+					Server: serverConfig{
+						Addr: "localhost:8080",
+					},
+				}
+			}(),
 		},
 	}
 
