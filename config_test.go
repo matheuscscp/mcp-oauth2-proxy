@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"regexp"
 	"testing"
 
@@ -152,7 +153,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 			},
 		},
 		{
-			name: "config with hosts having nil scopes - initializes empty slices",
+			name: "config with hosts having valid endpoints",
 			config: config{
 				Provider: providerConfig{
 					ClientID:     "test-client-id",
@@ -161,12 +162,12 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 				Proxy: proxyConfig{
 					Hosts: []hostConfig{
 						{
-							Host:   "example.com",
-							Scopes: nil,
+							Host:     "example.com",
+							Endpoint: "http://localhost:8080",
 						},
 						{
-							Host:   "test.org",
-							Scopes: nil,
+							Host:     "test.org",
+							Endpoint: "http://localhost:8081",
 						},
 					},
 				},
@@ -183,12 +184,12 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 					AllowedRedirectURLs: []string{},
 					Hosts: []hostConfig{
 						{
-							Host:   "example.com",
-							Scopes: []scopeConfig{},
+							Host:     "example.com",
+							Endpoint: "http://localhost:8080",
 						},
 						{
-							Host:   "test.org",
-							Scopes: []scopeConfig{},
+							Host:     "test.org",
+							Endpoint: "http://localhost:8081",
 						},
 					},
 				},
@@ -199,7 +200,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 			},
 		},
 		{
-			name: "config with scopes having nil covers - initializes empty slices",
+			name: "config with hosts missing endpoint - validation error",
 			config: config{
 				Provider: providerConfig{
 					ClientID:     "test-client-id",
@@ -208,56 +209,14 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 				Proxy: proxyConfig{
 					Hosts: []hostConfig{
 						{
-							Host: "example.com",
-							Scopes: []scopeConfig{
-								{
-									Name:        "read",
-									Description: "Read access",
-									Covers:      nil,
-								},
-								{
-									Name:        "write",
-									Description: "Write access",
-									Covers:      nil,
-								},
-							},
+							Host:     "example.com",
+							Endpoint: "", // Missing endpoint
 						},
 					},
 				},
 			},
-			wantErr: false,
-			expectedConfig: config{
-				Provider: providerConfig{
-					Name:                "google",
-					ClientID:            "test-client-id",
-					ClientSecret:        "test-client-secret",
-					AllowedEmailDomains: []string{},
-				},
-				Proxy: proxyConfig{
-					AllowedRedirectURLs: []string{},
-					Hosts: []hostConfig{
-						{
-							Host: "example.com",
-							Scopes: []scopeConfig{
-								{
-									Name:        "read",
-									Description: "Read access",
-									Covers:      []string{},
-								},
-								{
-									Name:        "write",
-									Description: "Write access",
-									Covers:      []string{},
-								},
-							},
-						},
-					},
-				},
-				Server: serverConfig{
-					Addr: ":8080",
-					CORS: false,
-				},
-			},
+			wantErr:        true,
+			expectedErrMsg: "both host and endpoint must be set for each proxy host",
 		},
 	}
 
@@ -284,12 +243,6 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 
 			// Verify nil slice initialization worked
 			g.Expect(tt.config.Proxy.Hosts).ToNot(BeNil())
-			for i := range tt.config.Proxy.Hosts {
-				g.Expect(tt.config.Proxy.Hosts[i].Scopes).ToNot(BeNil())
-				for j := range tt.config.Proxy.Hosts[i].Scopes {
-					g.Expect(tt.config.Proxy.Hosts[i].Scopes[j].Covers).ToNot(BeNil())
-				}
-			}
 
 			// Verify regex compilation worked when applicable
 			if len(tt.config.Provider.AllowedEmailDomains) > 0 {
@@ -521,12 +474,15 @@ func TestProxyConfig_validateRedirectURL(t *testing.T) {
 }
 
 func TestProxyConfig_supportedScopes(t *testing.T) {
+	// Since supportedScopes now fetches from an MCP endpoint,
+	// we'll test just the basic logic with mock data
 	tests := []struct {
 		name           string
 		proxy          proxyConfig
 		host           string
 		expected       []string
 		expectedConfig []scopeConfig
+		expectError    bool
 	}{
 		{
 			name: "no hosts configured - returns default scope",
@@ -541,11 +497,8 @@ func TestProxyConfig_supportedScopes(t *testing.T) {
 			proxy: proxyConfig{
 				Hosts: []hostConfig{
 					{
-						Host: "other.com",
-						Scopes: []scopeConfig{
-							{Name: "read"},
-							{Name: "write"},
-						},
+						Host:     "other.com",
+						Endpoint: "http://localhost:8080",
 					},
 				},
 			},
@@ -553,52 +506,16 @@ func TestProxyConfig_supportedScopes(t *testing.T) {
 			expected: []string{"mcp-oauth2-proxy"},
 		},
 		{
-			name: "host found with single scope",
+			name: "host found but MCP returns empty scopes - returns default scope",
 			proxy: proxyConfig{
 				Hosts: []hostConfig{
 					{
 						Host: "example.com",
-						Scopes: []scopeConfig{
-							{Name: "read", Description: "Read access"},
-						},
-					},
-				},
-			},
-			host:     "example.com",
-			expected: []string{"read"},
-			expectedConfig: []scopeConfig{
-				{Name: "read", Description: "Read access"},
-			},
-		},
-		{
-			name: "host found with multiple scopes",
-			proxy: proxyConfig{
-				Hosts: []hostConfig{
-					{
-						Host: "example.com",
-						Scopes: []scopeConfig{
-							{Name: "read", Description: "Read access"},
-							{Name: "write", Description: "Write access"},
-							{Name: "admin", Description: "Admin access"},
-						},
-					},
-				},
-			},
-			host:     "example.com",
-			expected: []string{"read", "write", "admin"},
-			expectedConfig: []scopeConfig{
-				{Name: "read", Description: "Read access"},
-				{Name: "write", Description: "Write access"},
-				{Name: "admin", Description: "Admin access"},
-			},
-		},
-		{
-			name: "host found with no scopes - returns default scope",
-			proxy: proxyConfig{
-				Hosts: []hostConfig{
-					{
-						Host:   "example.com",
-						Scopes: []scopeConfig{},
+						Endpoint: func() string {
+							// Create mock MCP server that returns empty scopes
+							mockMCP := createMockMCPServer([]scopeConfig{})
+							return mockMCP.URL
+						}(),
 					},
 				},
 			},
@@ -606,53 +523,50 @@ func TestProxyConfig_supportedScopes(t *testing.T) {
 			expected: []string{"mcp-oauth2-proxy"},
 		},
 		{
-			name: "multiple hosts - returns scopes for matching host",
+			name: "host found but invalid MCP endpoint URL - returns error",
+			proxy: proxyConfig{
+				Hosts: []hostConfig{
+					{
+						Host:     "example.com",
+						Endpoint: "http://invalid\x00url\x01with\x02control\x03characters",
+					},
+				},
+			},
+			host:        "example.com",
+			expectError: true,
+		},
+		{
+			name: "host found but MCP returns invalid JSON metadata - returns error",
 			proxy: proxyConfig{
 				Hosts: []hostConfig{
 					{
 						Host: "example.com",
-						Scopes: []scopeConfig{
-							{Name: "read"},
-							{Name: "write"},
-						},
-					},
-					{
-						Host: "test.org",
-						Scopes: []scopeConfig{
-							{Name: "admin"},
-						},
+						Endpoint: func() string {
+							// Create mock MCP server that returns invalid JSON in metadata
+							mockMCP := createMockMCPServerWithBogusJSON()
+							return mockMCP.URL
+						}(),
 					},
 				},
 			},
-			host:     "test.org",
-			expected: []string{"admin"},
-			expectedConfig: []scopeConfig{
-				{Name: "admin"},
-			},
-		},
-		{
-			name: "host match is exact - case sensitive",
-			proxy: proxyConfig{
-				Hosts: []hostConfig{
-					{
-						Host: "Example.com",
-						Scopes: []scopeConfig{
-							{Name: "read"},
-						},
-					},
-				},
-			},
-			host:     "example.com",
-			expected: []string{"mcp-oauth2-proxy"},
+			host:        "example.com",
+			expectError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			result, resultConfig := tt.proxy.supportedScopes(tt.host)
-			g.Expect(result).To(Equal(tt.expected))
-			g.Expect(resultConfig).To(Equal(tt.expectedConfig))
+			// Use a context for the new signature
+			ctx := context.Background()
+			result, resultConfig, err := tt.proxy.supportedScopes(ctx, tt.host)
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(result).To(Equal(tt.expected))
+				g.Expect(resultConfig).To(Equal(tt.expectedConfig))
+			}
 		})
 	}
 }

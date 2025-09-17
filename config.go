@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
 	"strings"
 
+	"github.com/mark3labs/mcp-go/client"
+	"github.com/mark3labs/mcp-go/mcp"
 	"gopkg.in/yaml.v3"
 )
 
@@ -36,14 +40,14 @@ type proxyConfig struct {
 }
 
 type hostConfig struct {
-	Host   string        `yaml:"host" json:"host"`
-	Scopes []scopeConfig `yaml:"scopes" json:"scopes"`
+	Host     string `yaml:"host" json:"host"`
+	Endpoint string `yaml:"endpoint" json:"endpoint"`
 }
 
 type scopeConfig struct {
 	Name        string   `yaml:"name" json:"name"`
 	Description string   `yaml:"description" json:"description"`
-	Covers      []string `yaml:"covers" json:"covers"`
+	Tools       []string `yaml:"tools" json:"tools"`
 }
 
 type serverConfig struct {
@@ -85,14 +89,9 @@ func (c *config) validateAndInitialize() error {
 	if c.Proxy.Hosts == nil {
 		c.Proxy.Hosts = []hostConfig{}
 	}
-	for i := range c.Proxy.Hosts {
-		if c.Proxy.Hosts[i].Scopes == nil {
-			c.Proxy.Hosts[i].Scopes = []scopeConfig{}
-		}
-		for j := range c.Proxy.Hosts[i].Scopes {
-			if c.Proxy.Hosts[i].Scopes[j].Covers == nil {
-				c.Proxy.Hosts[i].Scopes[j].Covers = []string{}
-			}
+	for _, h := range c.Proxy.Hosts {
+		if h.Host == "" || h.Endpoint == "" {
+			return fmt.Errorf("both host and endpoint must be set for each proxy host")
 		}
 	}
 	if c.Server.Addr == "" {
@@ -160,18 +159,49 @@ func (p *proxyConfig) validateRedirectURL(url string) bool {
 	return false
 }
 
-func (p *proxyConfig) supportedScopes(host string) ([]string, []scopeConfig) {
+func (p *proxyConfig) supportedScopes(ctx context.Context, host string) ([]string, []scopeConfig, error) {
 	for _, h := range p.Hosts {
 		if h.Host == host {
-			if len(h.Scopes) == 0 {
-				return []string{authorizationServerDefaultScope}, nil
+			scopes, err := p.fetchSupportedScopes(ctx, h.Endpoint)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to fetch supported scopes from '%s': %w", h.Endpoint, err)
 			}
-			scopes := make([]string, 0, len(h.Scopes))
-			for _, s := range h.Scopes {
-				scopes = append(scopes, s.Name)
+			if len(scopes) == 0 {
+				return []string{authorizationServerDefaultScope}, nil, nil
 			}
-			return scopes, h.Scopes
+			scopeNames := make([]string, 0, len(scopes))
+			for _, s := range scopes {
+				scopeNames = append(scopeNames, s.Name)
+			}
+			return scopeNames, scopes, nil
 		}
 	}
-	return []string{authorizationServerDefaultScope}, nil
+	return []string{authorizationServerDefaultScope}, nil, nil
+}
+
+func (p *proxyConfig) fetchSupportedScopes(ctx context.Context, endpoint string) ([]scopeConfig, error) {
+	c, err := client.NewStreamableHttpClient(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create MCP client: %w", err)
+	}
+	defer c.Close()
+	_, err = c.Initialize(ctx, mcp.InitializeRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize MCP client: %w", err)
+	}
+	resp, err := c.ListTools(ctx, mcp.ListToolsRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list MCP tools: %w", err)
+	}
+	b, err := json.Marshal(resp.Meta.AdditionalFields)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal MCP tools: %w", err)
+	}
+	var payload struct {
+		Scopes []scopeConfig `json:"scopes"`
+	}
+	if err := json.Unmarshal(b, &payload); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal MCP tools: %w", err)
+	}
+	return payload.Scopes, nil
 }

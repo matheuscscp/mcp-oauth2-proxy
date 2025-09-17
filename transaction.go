@@ -24,7 +24,9 @@ type transactionClientParams struct {
 	state         string
 }
 
-func newTransaction(conf *proxyConfig, r *http.Request, codeVerifier string) (*transaction, error) {
+func newTransaction(conf *proxyConfig, r *http.Request,
+	codeVerifier string, hostScopes []string) (*transaction, error) {
+
 	host := r.Host
 
 	q := r.URL.Query()
@@ -32,7 +34,6 @@ func newTransaction(conf *proxyConfig, r *http.Request, codeVerifier string) (*t
 	redirectURI := q.Get(queryParamRedirectURI)
 	state := q.Get(queryParamState)
 
-	hostScopes, _ := conf.supportedScopes(r.Host)
 	supportedScopes := make(map[string]bool, len(hostScopes))
 	for _, s := range hostScopes {
 		supportedScopes[s] = true

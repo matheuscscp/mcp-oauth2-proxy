@@ -12,31 +12,7 @@ proxy:
   allowedRedirectURLs: [] # list of Go regular expressions
   hosts: [] # hosts configuration
     # - host: mcp.example.com
-    #   scopes:
-    #     - name: toolbox:read_only
-    #       description: Allows all read-only operations.
-    #       covers:
-    #         - toolbox:get_resource
-    #         - toolbox:list_resources
-    #     - name: toolbox:read_write
-    #       description: Allows all operations.
-    #       covers:
-    #         - toolbox:read_only
-    #         - toolbox:get_resource
-    #         - toolbox:list_resources
-    #         - toolbox:create_resource
-    #         - toolbox:update_resource
-    #         - toolbox:delete_resource
-    #     - name: toolbox:get_resource
-    #       description: Allows retrieving resources.
-    #     - name: toolbox:list_resources
-    #       description: Allows listing resources.
-    #     - name: toolbox:create_resource
-    #       description: Allows creating resources.
-    #     - name: toolbox:update_resource
-    #       description: Allows updating resources.
-    #     - name: toolbox:delete_resource
-    #       description: Allows deleting resources.
+    #   endpoint: http://mcp.mcp-ns.svc.cluster.local./mcp
 
 server:
   cors: false
