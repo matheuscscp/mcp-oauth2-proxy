@@ -400,7 +400,7 @@ func TestOAuthAuthorizationServer(t *testing.T) {
 					ClientSecret: "test-client-secret",
 				},
 				Proxy: proxyConfig{
-					Hosts: []hostConfig{
+					Hosts: []*hostConfig{
 						{
 							Host:     "example.com",
 							Endpoint: "http://invalid-endpoint-that-does-not-exist:99999",
@@ -675,7 +675,7 @@ func TestAuthorize(t *testing.T) {
 					ClientSecret: "test-client-secret",
 				},
 				Proxy: proxyConfig{
-					Hosts: []hostConfig{
+					Hosts: []*hostConfig{
 						{
 							Host:     "example.com",
 							Endpoint: "http://invalid-endpoint-that-does-not-exist:99999",
@@ -713,7 +713,7 @@ func TestAuthorize(t *testing.T) {
 						ClientSecret: "test-client-secret",
 					},
 					Proxy: proxyConfig{
-						Hosts: []hostConfig{
+						Hosts: []*hostConfig{
 							{
 								Host:     "example.com",
 								Endpoint: mockMCP.URL,
@@ -752,7 +752,7 @@ func TestAuthorize(t *testing.T) {
 						ClientSecret: "test-client-secret",
 					},
 					Proxy: proxyConfig{
-						Hosts: []hostConfig{
+						Hosts: []*hostConfig{
 							{
 								Host:     "example.com",
 								Endpoint: mockMCP.URL,
@@ -793,7 +793,7 @@ func TestAuthorize(t *testing.T) {
 						ClientSecret: "test-client-secret",
 					},
 					Proxy: proxyConfig{
-						Hosts: []hostConfig{
+						Hosts: []*hostConfig{
 							{
 								Host:     "example.com",
 								Endpoint: mockMCP.URL,
