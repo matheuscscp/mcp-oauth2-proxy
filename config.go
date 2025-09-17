@@ -7,6 +7,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -14,7 +16,8 @@ import (
 )
 
 const (
-	defaultServerAddr = ":8080"
+	defaultServerAddr   = ":8080"
+	scopesCacheDuration = 10 * time.Second
 )
 
 type config struct {
@@ -33,8 +36,8 @@ type providerConfig struct {
 }
 
 type proxyConfig struct {
-	AllowedRedirectURLs []string     `yaml:"allowedRedirectURLs" json:"allowedRedirectURLs"`
-	Hosts               []hostConfig `yaml:"hosts" json:"hosts"`
+	AllowedRedirectURLs []string      `yaml:"allowedRedirectURLs" json:"allowedRedirectURLs"`
+	Hosts               []*hostConfig `yaml:"hosts" json:"hosts"`
 
 	regexAllowedRedirectURLs []*regexp.Regexp
 }
@@ -42,6 +45,10 @@ type proxyConfig struct {
 type hostConfig struct {
 	Host     string `yaml:"host" json:"host"`
 	Endpoint string `yaml:"endpoint" json:"endpoint"`
+
+	scopes         []scopeConfig
+	scopesDeadline time.Time
+	scopesMu       sync.Mutex
 }
 
 type scopeConfig struct {
@@ -87,7 +94,7 @@ func (c *config) validateAndInitialize() error {
 		c.Proxy.AllowedRedirectURLs = []string{}
 	}
 	if c.Proxy.Hosts == nil {
-		c.Proxy.Hosts = []hostConfig{}
+		c.Proxy.Hosts = []*hostConfig{}
 	}
 	for _, h := range c.Proxy.Hosts {
 		if h.Host == "" || h.Endpoint == "" {
@@ -159,24 +166,43 @@ func (p *proxyConfig) validateRedirectURL(url string) bool {
 	return false
 }
 
-func (p *proxyConfig) supportedScopes(ctx context.Context, host string) ([]string, []scopeConfig, error) {
+func (p *proxyConfig) supportedScopes(ctx context.Context, host string, now time.Time) ([]string, []scopeConfig, error) {
 	for _, h := range p.Hosts {
-		if h.Host == host {
-			scopes, err := p.fetchSupportedScopes(ctx, h.Endpoint)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to fetch supported scopes from '%s': %w", h.Endpoint, err)
-			}
-			if len(scopes) == 0 {
-				return []string{authorizationServerDefaultScope}, nil, nil
-			}
-			scopeNames := make([]string, 0, len(scopes))
-			for _, s := range scopes {
-				scopeNames = append(scopeNames, s.Name)
-			}
-			return scopeNames, scopes, nil
+		if h.Host != host {
+			continue
 		}
+		scopes, err := p.getSupportedScopes(ctx, h, now)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(scopes) == 0 {
+			return []string{authorizationServerDefaultScope}, nil, nil
+		}
+		scopeNames := make([]string, 0, len(scopes))
+		for _, s := range scopes {
+			scopeNames = append(scopeNames, s.Name)
+		}
+		return scopeNames, scopes, nil
 	}
 	return []string{authorizationServerDefaultScope}, nil, nil
+}
+
+func (p *proxyConfig) getSupportedScopes(ctx context.Context, h *hostConfig, now time.Time) ([]scopeConfig, error) {
+	h.scopesMu.Lock()
+	defer h.scopesMu.Unlock()
+
+	scopes := h.scopes
+	if !now.Before(h.scopesDeadline) {
+		var err error
+		scopes, err = p.fetchSupportedScopes(ctx, h.Endpoint)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch supported scopes from '%s': %w", h.Endpoint, err)
+		}
+		h.scopes = scopes
+		h.scopesDeadline = now.Add(scopesCacheDuration)
+	}
+
+	return scopes, nil
 }
 
 func (p *proxyConfig) fetchSupportedScopes(ctx context.Context, endpoint string) ([]scopeConfig, error) {

@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"net/http/httptest"
 	"regexp"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 )
@@ -43,7 +45,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 				},
 				Proxy: proxyConfig{
 					AllowedRedirectURLs: []string{"https://example\\.com/.*", "https://test\\.org/.*"},
-					Hosts:               []hostConfig{},
+					Hosts:               []*hostConfig{},
 				},
 				Server: serverConfig{
 					Addr: ":9090",
@@ -69,7 +71,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 				},
 				Proxy: proxyConfig{
 					AllowedRedirectURLs: []string{},
-					Hosts:               []hostConfig{},
+					Hosts:               []*hostConfig{},
 				},
 				Server: serverConfig{
 					Addr: ":8080",
@@ -144,7 +146,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 				},
 				Proxy: proxyConfig{
 					AllowedRedirectURLs: []string{},
-					Hosts:               []hostConfig{},
+					Hosts:               []*hostConfig{},
 				},
 				Server: serverConfig{
 					Addr: ":8080",
@@ -160,7 +162,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 					ClientSecret: "test-client-secret",
 				},
 				Proxy: proxyConfig{
-					Hosts: []hostConfig{
+					Hosts: []*hostConfig{
 						{
 							Host:     "example.com",
 							Endpoint: "http://localhost:8080",
@@ -182,7 +184,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 				},
 				Proxy: proxyConfig{
 					AllowedRedirectURLs: []string{},
-					Hosts: []hostConfig{
+					Hosts: []*hostConfig{
 						{
 							Host:     "example.com",
 							Endpoint: "http://localhost:8080",
@@ -207,7 +209,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 					ClientSecret: "test-client-secret",
 				},
 				Proxy: proxyConfig{
-					Hosts: []hostConfig{
+					Hosts: []*hostConfig{
 						{
 							Host:     "example.com",
 							Endpoint: "", // Missing endpoint
@@ -487,7 +489,7 @@ func TestProxyConfig_supportedScopes(t *testing.T) {
 		{
 			name: "no hosts configured - returns default scope",
 			proxy: proxyConfig{
-				Hosts: []hostConfig{},
+				Hosts: []*hostConfig{},
 			},
 			host:     "example.com",
 			expected: []string{"mcp-oauth2-proxy"},
@@ -495,7 +497,7 @@ func TestProxyConfig_supportedScopes(t *testing.T) {
 		{
 			name: "host not found - returns default scope",
 			proxy: proxyConfig{
-				Hosts: []hostConfig{
+				Hosts: []*hostConfig{
 					{
 						Host:     "other.com",
 						Endpoint: "http://localhost:8080",
@@ -508,7 +510,7 @@ func TestProxyConfig_supportedScopes(t *testing.T) {
 		{
 			name: "host found but MCP returns empty scopes - returns default scope",
 			proxy: proxyConfig{
-				Hosts: []hostConfig{
+				Hosts: []*hostConfig{
 					{
 						Host: "example.com",
 						Endpoint: func() string {
@@ -525,7 +527,7 @@ func TestProxyConfig_supportedScopes(t *testing.T) {
 		{
 			name: "host found but invalid MCP endpoint URL - returns error",
 			proxy: proxyConfig{
-				Hosts: []hostConfig{
+				Hosts: []*hostConfig{
 					{
 						Host:     "example.com",
 						Endpoint: "http://invalid\x00url\x01with\x02control\x03characters",
@@ -538,7 +540,7 @@ func TestProxyConfig_supportedScopes(t *testing.T) {
 		{
 			name: "host found but MCP returns invalid JSON metadata - returns error",
 			proxy: proxyConfig{
-				Hosts: []hostConfig{
+				Hosts: []*hostConfig{
 					{
 						Host: "example.com",
 						Endpoint: func() string {
@@ -559,7 +561,7 @@ func TestProxyConfig_supportedScopes(t *testing.T) {
 			g := NewWithT(t)
 			// Use a context for the new signature
 			ctx := context.Background()
-			result, resultConfig, err := tt.proxy.supportedScopes(ctx, tt.host)
+			result, resultConfig, err := tt.proxy.supportedScopes(ctx, tt.host, time.Now())
 			if tt.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -569,4 +571,133 @@ func TestProxyConfig_supportedScopes(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestProxyConfig_supportedScopesCaching(t *testing.T) {
+	tests := []struct {
+		name              string
+		setupMockServer   func() *httptest.Server
+		firstCallTime     time.Time
+		secondCallTime    time.Time
+		expectSecondFetch bool
+	}{
+		{
+			name: "cache hit - second call within cache duration",
+			setupMockServer: func() *httptest.Server {
+				return createMockMCPServer([]scopeConfig{
+					{
+						Name:        "read",
+						Description: "Read access",
+						Tools:       []string{},
+					},
+				})
+			},
+			firstCallTime:     time.Now(),
+			secondCallTime:    time.Now().Add(5 * time.Second), // Within 10s cache duration
+			expectSecondFetch: false,
+		},
+		{
+			name: "cache miss - second call after cache expiration",
+			setupMockServer: func() *httptest.Server {
+				return createMockMCPServer([]scopeConfig{
+					{
+						Name:        "write",
+						Description: "Write access",
+						Tools:       []string{"read"},
+					},
+				})
+			},
+			firstCallTime:     time.Now(),
+			secondCallTime:    time.Now().Add(15 * time.Second), // Beyond 10s cache duration
+			expectSecondFetch: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			mockServer := tt.setupMockServer()
+			defer mockServer.Close()
+
+			proxy := &proxyConfig{
+				Hosts: []*hostConfig{
+					{
+						Host:     "example.com",
+						Endpoint: mockServer.URL,
+					},
+				},
+			}
+
+			ctx := context.Background()
+
+			// First call
+			scopes1, _, err1 := proxy.supportedScopes(ctx, "example.com", tt.firstCallTime)
+			g.Expect(err1).ToNot(HaveOccurred())
+			g.Expect(scopes1).ToNot(BeEmpty())
+
+			// Second call
+			scopes2, _, err2 := proxy.supportedScopes(ctx, "example.com", tt.secondCallTime)
+			g.Expect(err2).ToNot(HaveOccurred())
+			g.Expect(scopes2).To(Equal(scopes1)) // Should return same scopes
+
+			// Verify the host has cached data
+			host := proxy.Hosts[0]
+			g.Expect(host.scopes).ToNot(BeEmpty())
+
+			if tt.expectSecondFetch {
+				// Cache should have been refreshed with new deadline after second call
+				expectedNewDeadline := tt.secondCallTime.Add(10 * time.Second)
+				g.Expect(host.scopesDeadline.After(expectedNewDeadline.Add(-time.Second))).To(BeTrue())
+				g.Expect(host.scopesDeadline.Before(expectedNewDeadline.Add(time.Second))).To(BeTrue())
+			} else {
+				// Cache should still have original deadline from first call
+				expectedOriginalDeadline := tt.firstCallTime.Add(10 * time.Second)
+				g.Expect(host.scopesDeadline.After(expectedOriginalDeadline.Add(-time.Second))).To(BeTrue())
+				g.Expect(host.scopesDeadline.Before(expectedOriginalDeadline.Add(time.Second))).To(BeTrue())
+			}
+		})
+	}
+}
+
+func TestHostConfig_getSupportedScopes(t *testing.T) {
+	g := NewWithT(t)
+
+	mockScopes := []scopeConfig{
+		{
+			Name:        "test-scope",
+			Description: "Test scope description",
+			Tools:       []string{"tool1", "tool2"},
+		},
+	}
+	mockServer := createMockMCPServer(mockScopes)
+	defer mockServer.Close()
+
+	proxy := &proxyConfig{}
+	host := &hostConfig{
+		Host:     "example.com",
+		Endpoint: mockServer.URL,
+	}
+
+	ctx := context.Background()
+	now := time.Now()
+
+	// First call should fetch from server
+	scopes, err := proxy.getSupportedScopes(ctx, host, now)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(scopes).To(Equal(mockScopes))
+	g.Expect(host.scopes).To(Equal(mockScopes))
+	g.Expect(host.scopesDeadline.After(now)).To(BeTrue())
+
+	// Second call within cache window should return cached data
+	cachedScopes, err := proxy.getSupportedScopes(ctx, host, now.Add(5*time.Second))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(cachedScopes).To(Equal(mockScopes))
+
+	// Call after cache expiry should fetch fresh data
+	newNow := now.Add(15 * time.Second)
+	freshScopes, err := proxy.getSupportedScopes(ctx, host, newNow)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(freshScopes).To(Equal(mockScopes))
+	g.Expect(host.scopesDeadline.After(newNow)).To(BeTrue())
 }
