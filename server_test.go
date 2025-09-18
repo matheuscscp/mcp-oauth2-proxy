@@ -23,7 +23,6 @@ func TestServer(t *testing.T) {
 		conf := &config{
 			Server: serverConfig{
 				Addr: ":8080",
-				CORS: false,
 			},
 		}
 
@@ -63,7 +62,6 @@ func TestServer(t *testing.T) {
 		conf := &config{
 			Server: serverConfig{
 				Addr: ":8080",
-				CORS: false,
 			},
 		}
 
@@ -94,7 +92,6 @@ func TestServer(t *testing.T) {
 		conf := &config{
 			Server: serverConfig{
 				Addr: ":8080",
-				CORS: false,
 			},
 		}
 
@@ -118,9 +115,11 @@ func TestServer(t *testing.T) {
 		})
 
 		conf := &config{
+			Proxy: proxyConfig{
+				CORS: true,
+			},
 			Server: serverConfig{
 				Addr: ":8080",
-				CORS: true,
 			},
 		}
 
@@ -212,7 +211,6 @@ func TestServer(t *testing.T) {
 		conf := &config{
 			Server: serverConfig{
 				Addr: ":8080",
-				CORS: false,
 			},
 		}
 
@@ -242,7 +240,6 @@ func TestServer(t *testing.T) {
 		conf := &config{
 			Server: serverConfig{
 				Addr: ":8080",
-				CORS: false,
 			},
 		}
 

@@ -13,7 +13,7 @@ import (
 func newServer(conf *config, api http.Handler,
 	promRegisterer prometheus.Registerer, promGatherer prometheus.Gatherer) *http.Server {
 
-	if conf.Server.CORS {
+	if conf.Proxy.CORS {
 		api = handleCORS(api)
 	}
 
