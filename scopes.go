@@ -35,14 +35,16 @@ func respondScopeSelectionPage(w http.ResponseWriter, r *http.Request, scopes []
 			if i == j {
 				continue
 			}
-			aCoveredByB := true
-			for toolCoveredByA := range toolsCoveredByScope[a.Name] {
-				if _, ok := toolsCoveredByScope[b.Name][toolCoveredByA]; !ok {
-					aCoveredByB = false
+			coveredByB := true
+			toolsCoveredByA := toolsCoveredByScope[a.Name]
+			toolsCoveredByB := toolsCoveredByScope[b.Name]
+			for toolCoveredByA := range toolsCoveredByA {
+				if _, ok := toolsCoveredByB[toolCoveredByA]; !ok {
+					coveredByB = false
 					break
 				}
 			}
-			if aCoveredByB {
+			if coveredByB {
 				scope.CoveredBy = append(scope.CoveredBy, b.Name)
 			}
 		}

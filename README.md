@@ -100,6 +100,79 @@ mcp-oauth2-proxy exposes the following HTTP endpoints:
 - **JWT Token Management**: Issues and manages its own JWT tokens for secure communication
 - **Automatic Key Rotation**: Handles private key rotation for token signing and verification
 - **Host-based Routing**: Supports multiple MCP servers through HTTP Host header routing
+- **Permissions Consent Screen**: If the MCP server advertises a set of scopes, the user is presented with a consent screen
+
+#### Permissions Consent Screen
+
+MCP servers can advertise scopes through the `tools/list` MCP request. If the response
+contains a `_meta.scopes` field with a list of scopes, the user will be presented
+with a consent screen during the OAuth2 authorization flow to choose which scopes
+should be granted to the issued token.
+
+For example, if the MCP server responds with:
+
+```json
+[
+  {
+    "name": "toolbox:read_only",
+    "description": "Allow all read-only toolbox operations.",
+    "tools": [
+      "get_resource",
+      "list_resources"
+    ]
+  },
+  {
+    "name": "toolbox:read_write",
+    "description": "Allow all toolbox operations.",
+    "tools": [
+      "get_resource",
+      "list_resources",
+      "create_resource",
+      "update_resource",
+      "delete_resource"
+    ]
+  },
+  {
+    "name": "toolbox:get_resource",
+    "description": "Allow getting a resource.",
+    "tools": [
+      "get_resource"
+    ]
+  },
+  {
+    "name": "toolbox:list_resources",
+    "description": "Allow listing resources.",
+    "tools": [
+      "list_resources"
+    ]
+  },
+  {
+    "name": "toolbox:create_resource",
+    "description": "Allow creating resources.",
+    "tools": [
+      "create_resource"
+    ]
+  },
+  {
+    "name": "toolbox:update_resource",
+    "description": "Allow updating resources.",
+    "tools": [
+      "update_resource"
+    ]
+  },
+  {
+    "name": "toolbox:delete_resource",
+    "description": "Allow deleting resources.",
+    "tools": [
+      "delete_resource"
+    ]
+  }
+]
+```
+
+Users will see a consent screen like this:
+
+![Consent Screen](docs/img/consent-screen.png)
 
 ## Installation
 
