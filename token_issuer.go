@@ -53,7 +53,7 @@ func newTokenIssuer() *tokenIssuer {
 	return &tokenIssuer{&automaticPrivateKeySource{}}
 }
 
-func (t *tokenIssuer) issue(iss, sub, aud string, now time.Time, scopes []string) (string, time.Time, error) {
+func (t *tokenIssuer) issue(iss, sub, aud string, now time.Time, groups, scopes []string) (string, time.Time, error) {
 	exp := now.Add(issuerTokenDuration)
 	nbf := now
 	iat := now
@@ -67,6 +67,7 @@ func (t *tokenIssuer) issue(iss, sub, aud string, now time.Time, scopes []string
 		NotBefore(nbf).
 		IssuedAt(iat).
 		JwtID(jti).
+		Claim("groups", groups).
 		Claim("scopes", scopes).
 		Build()
 	if err != nil {

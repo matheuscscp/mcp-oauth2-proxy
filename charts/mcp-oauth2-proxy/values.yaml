@@ -2,8 +2,8 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
-provider: # identity provider-specific configuration
-  name: "" # defaults to google
+provider: # identity provider configuration
+  name: ""
   clientID: ""
   clientSecret: ""
   allowedEmailDomains: [] # list of Go regular expressions
@@ -35,9 +35,9 @@ fullnameOverride: ""
 # This section builds out the service account more information can be found here: https://kubernetes.io/docs/concepts/security/service-accounts/
 serviceAccount:
   # Specifies whether a service account should be created
-  create: true
+  create: false
   # Automatically mount a ServiceAccount's API credentials?
-  automount: true
+  automount: false
   # Annotations to add to the service account
   annotations: {}
   # The name of the service account to use.
@@ -103,17 +103,21 @@ readinessProbe:
     path: /readyz
     port: http
 
+# Environment variables to set in the container.
+env: []
+  # - name: GOOGLE_APPLICATION_CREDENTIALS
+  #   value: /etc/mcp-oauth2-proxy/google/credentials.json
+
 # Additional volumes on the output Deployment definition.
 volumes: []
-# - name: foo
+# - name: google-credentials
 #   secret:
-#     secretName: mysecret
-#     optional: false
+#     secretName: mcp-oauth2-proxy-google-credentials
 
 # Additional volumeMounts on the output Deployment definition.
 volumeMounts: []
-# - name: foo
-#   mountPath: "/etc/foo"
+# - name: google-credentials
+#   mountPath: /etc/mcp-oauth2-proxy/google
 #   readOnly: true
 
 nodeSelector: {}

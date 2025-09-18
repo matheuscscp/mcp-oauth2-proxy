@@ -14,16 +14,16 @@ const (
 
 type provider interface {
 	oauth2Config() *oauth2.Config
-	verifyUser(ctx context.Context, ts oauth2.TokenSource) (string, error)
+	verifyUser(ctx context.Context, ts oauth2.TokenSource) (*userInfo, error)
 }
 
-func newProvider(conf *config) (provider, error) {
-	switch conf.Provider.Name {
+func newProvider(conf *providerConfig) (provider, error) {
+	switch conf.Name {
 	case providerGoogle:
-		return &googleProvider{conf.Provider.validateEmailDomain}, nil
+		return &googleProvider{validateEmailDomain: conf.validateEmailDomain}, nil
 	case providerGitHub:
 		return githubProvider{}, nil
 	default:
-		return nil, fmt.Errorf("unsupported provider: %s", conf.Provider.Name)
+		return nil, fmt.Errorf("unsupported provider: %s", conf.Name)
 	}
 }

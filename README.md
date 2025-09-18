@@ -195,13 +195,11 @@ helm install mcp-oauth2-proxy oci://ghcr.io/matheuscscp/mcp-oauth2-proxy/charts/
   --set provider.clientSecret=your-client-secret
 ```
 
-**Note**: The provider defaults to Google if not specified in the Helm values.
-
 For all available configuration options, see the [values.yaml](charts/mcp-oauth2-proxy/values.yaml) file.
 
 #### Key Helm Values
 
-- `provider.name`: OAuth2 provider. One of [`google`, `github`]. Defaults to `google`.
+- `provider.name`: The identifier of the Identity Provider.
 - `provider.clientID`: OAuth2 client ID from your IdP.
 - `provider.clientSecret`: OAuth2 client secret from your IdP.
 - `provider.allowedEmailDomains` (optional): List of Go regular expressions for allowed email domains.
@@ -228,7 +226,8 @@ metadata:
   name: my-mcp-server
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    # Only the auth-url annotation is needed for mcp-oauth2-proxy integration
+
+    # Only the auth-url annotation is needed for mcp-oauth2-proxy
     nginx.ingress.kubernetes.io/auth-url: https://$host/authenticate
 spec:
   ingressClassName: nginx
@@ -256,9 +255,9 @@ metadata endpoints, according to the MCP specification.
 
 ## Roadmap
 
-- [x] Google Authentication
-- [x] GitHub Authentication
+- [x] Google [Authentication](docs/google.md#authentication) (via Google Email)
+- [x] Google [Authorization](docs/google.md#authorization) (via Google Groups in the Google Workspace of the Google Email domain)
+- [x] GitHub [Authentication](docs/github.md#authentication) (via GitHub Username)
+- [ ] GitHub Authorization (via GitHub Organization Teams)
 - [ ] Microsoft Entra ID Authentication
-- [ ] Google Authorization (via Google Groups)
-- [ ] GitHub Authorization (via GitHub Teams)
 - [ ] Microsoft Entra ID Authorization (via Microsoft Entra ID Groups)

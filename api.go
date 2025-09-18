@@ -207,11 +207,12 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 
 		// Issue an access token in the proxy realm.
 		iss := baseURL(r)
-		sub := user
+		sub := user.username
 		aud := baseURL(r)
 		now := nowFunc()
+		groups := user.groups
 		scopes := tx.clientParams.scopes
-		accessToken, exp, err := ti.issue(iss, sub, aud, now, scopes)
+		accessToken, exp, err := ti.issue(iss, sub, aud, now, groups, scopes)
 		if err != nil {
 			l.WithError(err).Error("failed to issue access token")
 			http.Error(w, "Failed to issue access token", http.StatusInternalServerError)

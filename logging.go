@@ -10,13 +10,20 @@ import (
 type contextKeyLogger struct{}
 
 func fromRequest(r *http.Request) logrus.FieldLogger {
-	if l := r.Context().Value(contextKeyLogger{}); l != nil {
+	return fromContext(r.Context())
+}
+
+func fromContext(ctx context.Context) logrus.FieldLogger {
+	if l := ctx.Value(contextKeyLogger{}); l != nil {
 		return l.(logrus.FieldLogger)
 	}
-	return logrus.WithContext(r.Context())
+	return logrus.WithContext(ctx)
 }
 
 func intoRequest(r *http.Request, logger logrus.FieldLogger) *http.Request {
-	ctx := context.WithValue(r.Context(), contextKeyLogger{}, logger)
-	return r.WithContext(ctx)
+	return r.WithContext(intoContext(r.Context(), logger))
+}
+
+func intoContext(ctx context.Context, logger logrus.FieldLogger) context.Context {
+	return context.WithValue(ctx, contextKeyLogger{}, logger)
 }

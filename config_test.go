@@ -19,6 +19,17 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 		expectedConfig config
 	}{
 		{
+			name: "empty provider name",
+			config: config{
+				Provider: providerConfig{
+					ClientID:     "test-client-id",
+					ClientSecret: "test-client-secret",
+				},
+			},
+			wantErr:        true,
+			expectedErrMsg: "provider.name must be set",
+		},
+		{
 			name: "valid config with all fields",
 			config: config{
 				Provider: providerConfig{
@@ -57,6 +68,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 			name: "config with defaults applied",
 			config: config{
 				Provider: providerConfig{
+					Name:         "test-provider",
 					ClientID:     "test-client-id",
 					ClientSecret: "test-client-secret",
 				},
@@ -64,7 +76,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 			wantErr: false,
 			expectedConfig: config{
 				Provider: providerConfig{
-					Name:                "google",
+					Name:                "test-provider",
 					ClientID:            "test-client-id",
 					ClientSecret:        "test-client-secret",
 					AllowedEmailDomains: []string{},
@@ -82,6 +94,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 			name: "missing client ID",
 			config: config{
 				Provider: providerConfig{
+					Name:         "test-provider",
 					ClientSecret: "test-client-secret",
 				},
 			},
@@ -92,6 +105,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 			name: "missing client secret",
 			config: config{
 				Provider: providerConfig{
+					Name:     "test-provider",
 					ClientID: "test-client-id",
 				},
 			},
@@ -102,6 +116,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 			name: "invalid regex in allowed email domains",
 			config: config{
 				Provider: providerConfig{
+					Name:                "test-provider",
 					ClientID:            "test-client-id",
 					ClientSecret:        "test-client-secret",
 					AllowedEmailDomains: []string{"[invalid-regex"},
@@ -114,6 +129,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 			name: "invalid regex in allowed redirect URLs",
 			config: config{
 				Provider: providerConfig{
+					Name:         "test-provider",
 					ClientID:     "test-client-id",
 					ClientSecret: "test-client-secret",
 				},
@@ -128,6 +144,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 			name: "config with nil hosts - initializes empty slice",
 			config: config{
 				Provider: providerConfig{
+					Name:         "test-provider",
 					ClientID:     "test-client-id",
 					ClientSecret: "test-client-secret",
 				},
@@ -138,7 +155,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 			wantErr: false,
 			expectedConfig: config{
 				Provider: providerConfig{
-					Name:                "google",
+					Name:                "test-provider",
 					ClientID:            "test-client-id",
 					ClientSecret:        "test-client-secret",
 					AllowedEmailDomains: []string{},
@@ -156,6 +173,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 			name: "config with hosts having valid endpoints",
 			config: config{
 				Provider: providerConfig{
+					Name:         "test-provider",
 					ClientID:     "test-client-id",
 					ClientSecret: "test-client-secret",
 				},
@@ -175,7 +193,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 			wantErr: false,
 			expectedConfig: config{
 				Provider: providerConfig{
-					Name:                "google",
+					Name:                "test-provider",
 					ClientID:            "test-client-id",
 					ClientSecret:        "test-client-secret",
 					AllowedEmailDomains: []string{},
@@ -202,6 +220,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 			name: "config with hosts missing endpoint - validation error",
 			config: config{
 				Provider: providerConfig{
+					Name:         "test-provider",
 					ClientID:     "test-client-id",
 					ClientSecret: "test-client-secret",
 				},

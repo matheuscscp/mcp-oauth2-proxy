@@ -18,6 +18,7 @@ import (
 const (
 	defaultServerAddr   = ":8080"
 	scopesCacheDuration = 10 * time.Second
+	maxGroups           = 100
 )
 
 type config struct {
@@ -84,19 +85,11 @@ func newConfig() (*config, error) {
 
 func (c *config) validateAndInitialize() error {
 	// Apply defaults.
-	if c.Provider.Name == "" {
-		c.Provider.Name = providerGoogle
-	}
 	if c.Provider.AllowedEmailDomains == nil {
 		c.Provider.AllowedEmailDomains = []string{}
 	}
 	if c.Proxy.Hosts == nil {
 		c.Proxy.Hosts = []*hostConfig{}
-	}
-	for _, h := range c.Proxy.Hosts {
-		if h.Host == "" || h.Endpoint == "" {
-			return fmt.Errorf("both host and endpoint must be set for each proxy host")
-		}
 	}
 	if c.Proxy.AllowedRedirectURLs == nil {
 		c.Proxy.AllowedRedirectURLs = []string{}
@@ -105,12 +98,20 @@ func (c *config) validateAndInitialize() error {
 		c.Server.Addr = defaultServerAddr
 	}
 
-	// Validate client credentials.
+	// Validate required fields.
+	if c.Provider.Name == "" {
+		return fmt.Errorf("provider.name must be set")
+	}
 	if c.Provider.ClientID == "" {
 		return fmt.Errorf("provider.clientID must be set")
 	}
 	if c.Provider.ClientSecret == "" {
 		return fmt.Errorf("provider.clientSecret must be set")
+	}
+	for _, h := range c.Proxy.Hosts {
+		if h.Host == "" || h.Endpoint == "" {
+			return fmt.Errorf("both host and endpoint must be set for each proxy host")
+		}
 	}
 
 	// Compile regular expressions.
@@ -134,15 +135,22 @@ func (c *config) validateAndInitialize() error {
 	return nil
 }
 
+func getEmailDomain(email string) string {
+	s := strings.Split(email, "@")
+	if len(s) == 2 {
+		return s[1]
+	}
+	return ""
+}
+
 func (p *providerConfig) validateEmailDomain(email string) bool {
+	domain := getEmailDomain(email)
+	if domain == "" {
+		return false
+	}
 	if len(p.regexAllowedEmailDomains) == 0 {
 		return true
 	}
-	s := strings.Split(email, "@")
-	if len(s) != 2 {
-		return false
-	}
-	domain := s[1]
 	for _, r := range p.regexAllowedEmailDomains {
 		if r.MatchString(domain) {
 			return true

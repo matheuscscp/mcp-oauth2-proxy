@@ -29,7 +29,7 @@ func TestGitHubProvider_verifyUser(t *testing.T) {
 		rawJSON       string // For testing malformed JSON
 		userStatus    int
 		tokenError    bool
-		expectedUser  string
+		expectedUser  *userInfo
 		expectedError string
 	}{
 		{
@@ -40,7 +40,7 @@ func TestGitHubProvider_verifyUser(t *testing.T) {
 				"name":  "Test User",
 			},
 			userStatus:   http.StatusOK,
-			expectedUser: "testuser",
+			expectedUser: &userInfo{username: "testuser"},
 		},
 		{
 			name: "user with nil login",
@@ -50,7 +50,7 @@ func TestGitHubProvider_verifyUser(t *testing.T) {
 				// no login field
 			},
 			userStatus:   http.StatusOK,
-			expectedUser: "", // GetLogin() returns empty string for nil
+			expectedUser: &userInfo{username: ""}, // GetLogin() returns empty string for nil
 		},
 		{
 			name:          "token source error",
@@ -164,7 +164,7 @@ func TestGitHubProvider_Integration(t *testing.T) {
 		},
 	}
 
-	provider, err := newProvider(config)
+	provider, err := newProvider(&config.Provider)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(provider).ToNot(BeNil())
 
@@ -194,7 +194,7 @@ func TestGitHubProvider_Integration(t *testing.T) {
 
 	user, err := provider.verifyUser(ctx, tokenSource)
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(user).To(Equal("testuser"))
+	g.Expect(user).To(Equal(&userInfo{username: "testuser"}))
 }
 
 // errorTokenSource is a helper for testing token source errors

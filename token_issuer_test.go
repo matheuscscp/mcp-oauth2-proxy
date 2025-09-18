@@ -77,7 +77,7 @@ func TestTokenIssuer_issue(t *testing.T) {
 
 			now := time.Now()
 
-			tokenString, exp, err := tokenIssuer.issue(tt.issuer, tt.subject, tt.audience, now, tt.scopes)
+			tokenString, exp, err := tokenIssuer.issue(tt.issuer, tt.subject, tt.audience, now, nil, tt.scopes)
 
 			if tt.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
@@ -153,7 +153,7 @@ func TestTokenIssuer_verify(t *testing.T) {
 		{
 			name: "valid token",
 			setupToken: func(ti *tokenIssuer, now time.Time) string {
-				token, _, err := ti.issue("https://example.com", "user@example.com", "mcp-oauth2-proxy", now, nil)
+				token, _, err := ti.issue("https://example.com", "user@example.com", "mcp-oauth2-proxy", now, nil, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -186,7 +186,7 @@ func TestTokenIssuer_verify(t *testing.T) {
 			setupToken: func(ti *tokenIssuer, now time.Time) string {
 				// Issue token in the past
 				pastTime := now.Add(-2 * issuerTokenDuration)
-				token, _, err := ti.issue("https://example.com", "user@example.com", "mcp-oauth2-proxy", pastTime, nil)
+				token, _, err := ti.issue("https://example.com", "user@example.com", "mcp-oauth2-proxy", pastTime, nil, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -235,7 +235,7 @@ func TestTokenIssuer_verify(t *testing.T) {
 		{
 			name: "wrong issuer",
 			setupToken: func(ti *tokenIssuer, now time.Time) string {
-				token, _, err := ti.issue("https://wrong-issuer.com", "user@example.com", "mcp-oauth2-proxy", now, nil)
+				token, _, err := ti.issue("https://wrong-issuer.com", "user@example.com", "mcp-oauth2-proxy", now, nil, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -248,7 +248,7 @@ func TestTokenIssuer_verify(t *testing.T) {
 		{
 			name: "wrong audience",
 			setupToken: func(ti *tokenIssuer, now time.Time) string {
-				token, _, err := ti.issue("https://example.com", "user@example.com", "wrong-audience", now, nil)
+				token, _, err := ti.issue("https://example.com", "user@example.com", "wrong-audience", now, nil, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -658,4 +658,3 @@ func TestNewTokenIssuer(t *testing.T) {
 	_, ok := issuer.privateKeySource.(*automaticPrivateKeySource)
 	g.Expect(ok).To(BeTrue())
 }
-
