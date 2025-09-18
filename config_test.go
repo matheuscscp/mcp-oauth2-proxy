@@ -29,10 +29,10 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 				},
 				Proxy: proxyConfig{
 					AllowedRedirectURLs: []string{"https://example\\.com/.*", "https://test\\.org/.*"},
+					CORS:                true,
 				},
 				Server: serverConfig{
 					Addr: ":9090",
-					CORS: true,
 				},
 			},
 			wantErr: false,
@@ -46,10 +46,10 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 				Proxy: proxyConfig{
 					AllowedRedirectURLs: []string{"https://example\\.com/.*", "https://test\\.org/.*"},
 					Hosts:               []*hostConfig{},
+					CORS:                true,
 				},
 				Server: serverConfig{
 					Addr: ":9090",
-					CORS: true,
 				},
 			},
 		},
@@ -75,7 +75,6 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 				},
 				Server: serverConfig{
 					Addr: ":8080",
-					CORS: false,
 				},
 			},
 		},
@@ -150,7 +149,6 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 				},
 				Server: serverConfig{
 					Addr: ":8080",
-					CORS: false,
 				},
 			},
 		},
@@ -197,7 +195,6 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 				},
 				Server: serverConfig{
 					Addr: ":8080",
-					CORS: false,
 				},
 			},
 		},

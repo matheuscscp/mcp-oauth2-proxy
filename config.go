@@ -36,8 +36,9 @@ type providerConfig struct {
 }
 
 type proxyConfig struct {
-	AllowedRedirectURLs []string      `yaml:"allowedRedirectURLs" json:"allowedRedirectURLs"`
 	Hosts               []*hostConfig `yaml:"hosts" json:"hosts"`
+	AllowedRedirectURLs []string      `yaml:"allowedRedirectURLs" json:"allowedRedirectURLs"`
+	CORS                bool          `yaml:"cors" json:"cors"`
 
 	regexAllowedRedirectURLs []*regexp.Regexp
 }
@@ -59,7 +60,6 @@ type scopeConfig struct {
 
 type serverConfig struct {
 	Addr string `yaml:"addr" json:"addr"`
-	CORS bool   `yaml:"cors" json:"cors"`
 }
 
 func newConfig() (*config, error) {
@@ -90,9 +90,6 @@ func (c *config) validateAndInitialize() error {
 	if c.Provider.AllowedEmailDomains == nil {
 		c.Provider.AllowedEmailDomains = []string{}
 	}
-	if c.Proxy.AllowedRedirectURLs == nil {
-		c.Proxy.AllowedRedirectURLs = []string{}
-	}
 	if c.Proxy.Hosts == nil {
 		c.Proxy.Hosts = []*hostConfig{}
 	}
@@ -100,6 +97,9 @@ func (c *config) validateAndInitialize() error {
 		if h.Host == "" || h.Endpoint == "" {
 			return fmt.Errorf("both host and endpoint must be set for each proxy host")
 		}
+	}
+	if c.Proxy.AllowedRedirectURLs == nil {
+		c.Proxy.AllowedRedirectURLs = []string{}
 	}
 	if c.Server.Addr == "" {
 		c.Server.Addr = defaultServerAddr

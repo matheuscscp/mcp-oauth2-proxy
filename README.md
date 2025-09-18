@@ -181,11 +181,11 @@ or is invalid, it returns 401 with the `WWW-Authenticate` header.
 - `provider.clientID`: OAuth2 client ID from your IdP.
 - `provider.clientSecret`: OAuth2 client secret from your IdP.
 - `provider.allowedEmailDomains` (optional): List of Go regular expressions for allowed email domains.
-- `proxy.allowedRedirectURLs` (optional): List of Go regular expressions for allowed redirect URLs.
-- `proxy.hosts`: List of MCP server hosts.
+- `proxy.hosts`: List of MCP server hosts to proxy requests for.
 - `proxy.hosts[].host`: The HTTP Host header identifying the MCP server.
 - `proxy.hosts[].endpoint`: The endpoint for the MCP server. Will be used for listing tools.
-- `server.cors` (optional): Enable CORS support. One of `true` or `false`. Defaults to `false`.
+- `proxy.allowedRedirectURLs` (optional): List of Go regular expressions for allowed redirect URLs.
+- `proxy.cors` (optional): Enable CORS support. One of `true` or `false`. Defaults to `false`.
 - `ingress.enabled` (optional): Enable ingress for external access. One of `true` or `false`. Defaults to `false`.
 - `podMonitor.enabled` (optional): Enable Prometheus monitoring. One of `true` or `false`. Defaults to `false`.
 

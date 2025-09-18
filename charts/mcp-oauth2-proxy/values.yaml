@@ -2,19 +2,17 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
-provider:
+provider: # identity provider-specific configuration
   name: "" # defaults to google
   clientID: ""
   clientSecret: ""
   allowedEmailDomains: [] # list of Go regular expressions
 
-proxy:
-  allowedRedirectURLs: [] # list of Go regular expressions
-  hosts: [] # hosts configuration
+proxy: # proxy configuration
+  hosts: [] # hosts configuration. used for configuration of the MCP server and for rendering the ingress hosts.
     # - host: mcp.example.com
     #   endpoint: http://mcp.mcp-ns.svc.cluster.local./mcp
-
-server:
+  allowedRedirectURLs: [] # list of Go regular expressions
   cors: false
 
 # This will set the replicaset count more information can be found here: https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
