@@ -199,22 +199,27 @@ helm install mcp-oauth2-proxy oci://ghcr.io/matheuscscp/mcp-oauth2-proxy/charts/
 
 For all available configuration options, see the [values.yaml](charts/mcp-oauth2-proxy/values.yaml) file.
 
-### ingress-nginx Integration
+#### Key Helm Values
 
-To integrate with ingress-nginx, configure the mcp-oauth2-proxy Helm chart to enable ingress, then create Ingress resources for each MCP server that requires authentication.
+- `provider.name`: OAuth2 provider. One of [`google`, `github`]. Defaults to `google`.
+- `provider.clientID`: OAuth2 client ID from your IdP.
+- `provider.clientSecret`: OAuth2 client secret from your IdP.
+- `provider.allowedEmailDomains` (optional): List of Go regular expressions for allowed email domains.
+- `proxy.hosts`: List of MCP server hosts to proxy requests for.
+- `proxy.hosts[].host`: The HTTP Host header identifying the MCP server.
+- `proxy.hosts[].endpoint`: The endpoint for the MCP server. Will be used for listing tools.
+- `proxy.allowedRedirectURLs` (optional): List of Go regular expressions for allowed redirect URLs.
+- `proxy.cors` (optional): Enable CORS support. One of `true` or `false`. Defaults to `false`.
+- `ingress.enabled` (optional): Enable ingress for external access. One of `true` or `false`. Defaults to `false`.
+- `podMonitor.enabled` (optional): Enable Prometheus monitoring. One of `true` or `false`. Defaults to `false`.
 
-#### Configure mcp-oauth2-proxy Ingress via Helm
+#### Integration with ingress-nginx
 
-```bash
-helm install mcp-oauth2-proxy oci://ghcr.io/matheuscscp/mcp-oauth2-proxy/charts/mcp-oauth2-proxy \
-  --set provider.clientID=your-client-id \
-  --set provider.clientSecret=your-client-secret \
-  --set ingress.enabled=true \
-  --set ingress.className=nginx \
-  --set 'ingress.hosts[0]=my-mcp.example.com'
-```
+To integrate with ingress-nginx, configure the mcp-oauth2-proxy Helm chart to enable ingress
+by specifying a host configuration in the value `proxy.hosts`, then create Ingress resources
+for each MCP server that requires authentication.
 
-#### MCP Server Ingress
+Example of Ingress resource for an MCP server:
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -246,21 +251,8 @@ spec:
 
 The key difference from traditional oauth2-proxy integration is that mcp-oauth2-proxy only requires the
 `auth-url` annotation. The `/authenticate` endpoint handles token validation. If the token is not present
-or is invalid, it returns 401 with the `WWW-Authenticate` header.
-
-### Key Configuration Options
-
-- `provider.name`: OAuth2 provider. One of [`google`, `github`]. Defaults to `google`.
-- `provider.clientID`: OAuth2 client ID from your IdP.
-- `provider.clientSecret`: OAuth2 client secret from your IdP.
-- `provider.allowedEmailDomains` (optional): List of Go regular expressions for allowed email domains.
-- `proxy.hosts`: List of MCP server hosts to proxy requests for.
-- `proxy.hosts[].host`: The HTTP Host header identifying the MCP server.
-- `proxy.hosts[].endpoint`: The endpoint for the MCP server. Will be used for listing tools.
-- `proxy.allowedRedirectURLs` (optional): List of Go regular expressions for allowed redirect URLs.
-- `proxy.cors` (optional): Enable CORS support. One of `true` or `false`. Defaults to `false`.
-- `ingress.enabled` (optional): Enable ingress for external access. One of `true` or `false`. Defaults to `false`.
-- `podMonitor.enabled` (optional): Enable Prometheus monitoring. One of `true` or `false`. Defaults to `false`.
+or is invalid, it returns 401 with the `WWW-Authenticate` header pointing to the authorization server
+metadata endpoints, according to the MCP specification.
 
 ## Roadmap
 
