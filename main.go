@@ -29,7 +29,7 @@ func getProviderAndConfig() (provider, *config) {
 	redactedConfig.Provider.ClientSecret = "redacted"
 	logrus.WithField("config", redactedConfig).Info("config loaded")
 
-	p, err := newProvider(conf)
+	p, err := newProvider(&conf.Provider)
 	if err != nil {
 		logrus.WithError(err).Fatal("failed to create provider")
 	}

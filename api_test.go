@@ -72,7 +72,7 @@ func createMockMCPServerWithBogusJSON() *httptest.Server {
 // mockProvider implements the provider interface for testing
 type mockProvider struct {
 	oauth2ConfigFunc func() *oauth2.Config
-	verifyUserResult string
+	verifyUserResult *userInfo
 	verifyUserError  error
 }
 
@@ -88,14 +88,14 @@ func (m *mockProvider) oauth2Config() *oauth2.Config {
 	}
 }
 
-func (m *mockProvider) verifyUser(ctx context.Context, ts oauth2.TokenSource) (string, error) {
+func (m *mockProvider) verifyUser(ctx context.Context, ts oauth2.TokenSource) (*userInfo, error) {
 	if m.verifyUserError != nil {
-		return "", m.verifyUserError
+		return nil, m.verifyUserError
 	}
-	if m.verifyUserResult != "" {
+	if m.verifyUserResult != nil {
 		return m.verifyUserResult, nil
 	}
-	return "test-user@example.com", nil
+	return &userInfo{username: "test-user@example.com"}, nil
 }
 
 // mockSessionStore allows simulating sessionStore failures
@@ -330,7 +330,7 @@ func TestAuthenticate(t *testing.T) {
 			bearerToken := tt.bearerToken
 			if tt.useValidToken {
 				// Issue a valid token for this test
-				validToken, _, err := tokenIssuer.issue("https://example.com", "test-user", "https://example.com", time.Now(), nil)
+				validToken, _, err := tokenIssuer.issue("https://example.com", "test-user", "https://example.com", time.Now(), nil, nil)
 				g.Expect(err).ToNot(HaveOccurred())
 				bearerToken = validToken
 			}
@@ -1005,7 +1005,7 @@ func TestCallback(t *testing.T) {
 			g := NewWithT(t)
 
 			mockProv := &mockProvider{
-				verifyUserResult: "test-user@example.com",
+				verifyUserResult: &userInfo{username: "test-user@example.com"},
 				verifyUserError:  tt.verifyError,
 			}
 
@@ -1161,7 +1161,7 @@ func TestToken(t *testing.T) {
 				now := time.Now()
 				var exp time.Time
 				var err error
-				jwtToken, exp, err = tokenIssuer.issue("https://example.com", "test-user@example.com", "mcp-oauth2-proxy", now, nil)
+				jwtToken, exp, err = tokenIssuer.issue("https://example.com", "test-user@example.com", "mcp-oauth2-proxy", now, nil, nil)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				// Create outcome with real JWT token

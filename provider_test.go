@@ -59,7 +59,7 @@ func TestNewProvider(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			provider, err := newProvider(tt.config)
+			provider, err := newProvider(&tt.config.Provider)
 
 			if tt.expectError {
 				g.Expect(err).To(HaveOccurred())
