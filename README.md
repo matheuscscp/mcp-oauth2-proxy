@@ -256,7 +256,7 @@ metadata endpoints, according to the MCP specification.
 ## Roadmap
 
 - [x] Google [Authentication](docs/google.md#authentication) (via Google Email)
-- [x] Google [Authorization](docs/google.md#authorization) (via Google Groups in the Google Workspace of the Google Email domain)
+- [x] Google [Authorization](docs/google.md#authorization) (via Google Workspace Groups)
 - [x] GitHub [Authentication](docs/github.md#authentication) (via GitHub Username)
 - [ ] GitHub Authorization (via GitHub Organization Teams)
 - [ ] Microsoft Entra ID Authentication
