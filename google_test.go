@@ -62,7 +62,7 @@ func TestGoogleProvider_verifyUser(t *testing.T) {
 			validateEmail: func(email string) bool {
 				return true
 			},
-			expectedError: "google email 'user@example.com' is not verified",
+			expectedError: "the Google email 'user@example.com' is not verified",
 		},
 		{
 			name: "domain not allowed",
@@ -94,7 +94,7 @@ func TestGoogleProvider_verifyUser(t *testing.T) {
 				return true
 			},
 			// This will succeed but with empty email, which will fail email verification
-			expectedError: "google email '' is not verified",
+			expectedError: "the Google email '' is not verified",
 		},
 		{
 			name:           "malformed JSON response",
@@ -103,7 +103,7 @@ func TestGoogleProvider_verifyUser(t *testing.T) {
 			validateEmail: func(email string) bool {
 				return true
 			},
-			expectedError: "error unmarshaling claims from google userinfo response",
+			expectedError: "failed to unmarshal claims from Google userinfo response",
 		},
 		{
 			name: "valid user with metadata server failure during workspace verification",
@@ -117,7 +117,7 @@ func TestGoogleProvider_verifyUser(t *testing.T) {
 			},
 			setupMetadataServer: true,
 			metadataServerFails: true,
-			expectedError:       "failed to verify Google Workspace user info: failed to get google service account email from environment: failed to get default service account email from metadata server",
+			expectedError:       "failed to verify Google Workspace user info: failed to get Google Service Account email from environment: failed to get default Service Account email from metadata server",
 		},
 	}
 
@@ -272,13 +272,13 @@ func TestGoogleProvider_getServiceAccountEmailFromEnv(t *testing.T) {
 			name:                "GCE metadata - server error",
 			setupMetadataServer: true,
 			metadataStatus:      http.StatusInternalServerError,
-			expectedError:       "failed to get default service account email from metadata server",
+			expectedError:       "failed to get default Service Account email from metadata server",
 		},
 		{
 			name:                "GCE metadata - not found",
 			setupMetadataServer: true,
 			metadataStatus:      http.StatusNotFound,
-			expectedError:       "failed to get default service account email from metadata server",
+			expectedError:       "failed to get default Service Account email from metadata server",
 		},
 		// Application Default Credentials scenarios
 		{
@@ -335,7 +335,7 @@ func TestGoogleProvider_getServiceAccountEmailFromEnv(t *testing.T) {
 					"file": "/var/run/secrets/tokens/gcp-ksa/token"
 				}
 			}`,
-			expectedError: "invalid service account impersonation URL",
+			expectedError: "invalid Service Account impersonation URL",
 		},
 		{
 			name:          "ADC - malformed JSON",
@@ -753,7 +753,7 @@ func TestGoogleProvider_verifyGoogleWorkspaceUser(t *testing.T) {
 				"suspended":    true,
 				"archived":     false,
 			},
-			expectedError: "google user 'user@example.com' is archived, suspended or deleted",
+			expectedError: "the Google user 'user@example.com' is archived, suspended or deleted",
 		},
 		{
 			name:                "user archived",
@@ -767,7 +767,7 @@ func TestGoogleProvider_verifyGoogleWorkspaceUser(t *testing.T) {
 				"suspended":    false,
 				"archived":     true,
 			},
-			expectedError: "google user 'user@example.com' is archived, suspended or deleted",
+			expectedError: "the Google user 'user@example.com' is archived, suspended or deleted",
 		},
 		{
 			name:                "user deleted",
@@ -782,7 +782,7 @@ func TestGoogleProvider_verifyGoogleWorkspaceUser(t *testing.T) {
 				"archived":     false,
 				"deletionTime": "2024-01-01T00:00:00Z",
 			},
-			expectedError: "google user 'user@example.com' is archived, suspended or deleted",
+			expectedError: "the Google user 'user@example.com' is archived, suspended or deleted",
 		},
 		{
 			name:                "user not found",
@@ -791,7 +791,7 @@ func TestGoogleProvider_verifyGoogleWorkspaceUser(t *testing.T) {
 			iamSignJWTStatus:    http.StatusOK,
 			tokenExchangeStatus: http.StatusOK,
 			userAPIStatus:       http.StatusNotFound,
-			expectedError:       "failed to get google user 'nonexistent@example.com'",
+			expectedError:       "failed to get Google user 'nonexistent@example.com'",
 		},
 		{
 			name:                "groups API failure",
@@ -806,7 +806,7 @@ func TestGoogleProvider_verifyGoogleWorkspaceUser(t *testing.T) {
 				"archived":     false,
 			},
 			groupsAPIStatus: http.StatusInternalServerError,
-			expectedError:   "failed to list groups for google user 'user@example.com'",
+			expectedError:   "failed to list groups for Google user 'user@example.com'",
 		},
 		{
 			name:                "newUserClient failure",

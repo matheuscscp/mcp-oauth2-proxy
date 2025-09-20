@@ -22,7 +22,7 @@ func newProvider(conf *providerConfig) (provider, error) {
 	case providerGoogle:
 		return &googleProvider{validateEmailDomain: conf.validateEmailDomain}, nil
 	case providerGitHub:
-		return githubProvider{}, nil
+		return newGitHubProvider(conf)
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", conf.Name)
 	}

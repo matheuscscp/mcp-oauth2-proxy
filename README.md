@@ -253,11 +253,9 @@ The key difference from traditional oauth2-proxy integration is that mcp-oauth2-
 or is invalid, it returns 401 with the `WWW-Authenticate` header pointing to the authorization server
 metadata endpoints, according to the MCP specification.
 
-## Roadmap
+## Providers
 
-- [x] Google [Authentication](docs/google.md#authentication) (via Google Email)
-- [x] Google [Authorization](docs/google.md#authorization) (via Google Workspace Groups)
-- [x] GitHub [Authentication](docs/github.md#authentication) (via GitHub Username)
-- [ ] GitHub Authorization (via GitHub Organization Teams)
-- [ ] Microsoft Entra ID Authentication
-- [ ] Microsoft Entra ID Authorization (via Microsoft Entra ID Groups)
+- Google [Authentication](docs/google.md#authentication) (via Google Email)
+- Google [Authorization](docs/google.md#authorization) (via Google Workspace Groups)
+- GitHub [Authentication](docs/github.md#authentication) (via GitHub Username)
+- GitHub [Authorization](docs/github.md#authorization) (via GitHub Organization Teams)

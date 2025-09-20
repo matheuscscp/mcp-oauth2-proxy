@@ -1,8 +1,9 @@
 # Google Provider
 
 The Google provider can be configured to authenticate users with a
-Google OAuth2 Client, and to optionally fetch their Google Groups in
-a Google Workspace by configuring a GCP Service Account.
+Google OAuth2 Client, and can optionally be configured to also fetch
+the user's Google Groups in a Google Workspace by configuring a GCP
+Service Account.
 
 To configure this provider, set the following Helm values:
 
@@ -29,8 +30,8 @@ Example of Helm values for the Google provider:
 ```yaml
 provider:
   name: google
-  clientID: your-client-id.apps.googleusercontent.com
-  clientSecret: your-client-secret
+  clientID: MY_PROJECT_NUMBER-dq9048dt1kjlrmlevevcdb5vb0snc8hd.apps.googleusercontent.com
+  clientSecret: SOCPXG-YZ-7s-Qf3WJ6z1mXCAD9j2e9_rVQ
   allowedEmailDomains:
     - ^my-org\.com$
 ```
@@ -49,10 +50,11 @@ The configuration steps are:
 1. Create a GCP Project and enable the following APIs on it:
     - `iamcredentials.googleapis.com` (for minting JWTs)
     - `admin.googleapis.com` (for accessing Google Workspace user and group info)
-2. Create a GCP Service Account and grant it the IAM Role Service Account Token Creator
-(`roles/iam.serviceAccountTokenCreator`) *on itself*. This self-impersonation permission
-is required for the proxy to use this Service Account to call the IAM SignJWT API for
-minting JWTs for Google Workspace Domain-wide Delegation.
+2. Create a GCP Service Account inside the GCP Procject and grant the IAM Role
+Service Account Token Creator (`roles/iam.serviceAccountTokenCreator`) to the
+Service Account *on itself*. This self-impersonation permission is required for
+the proxy to use this Service Account to call the IAM SignJWT API for minting
+JWTs for Google Workspace Domain-wide Delegation.
 3. [Configure the proxy](#configuring-the-proxy-to-use-a-gcp-service-account)
 to use the Service Account via one of the following methods:
     - [Workload Identity Federation for GKE](#via-workload-identity-federation-for-gke)
@@ -79,14 +81,14 @@ proxy to be able to call the IAM SignJWT API for minting JWTs for Google Workspa
 Domain-wide Delegation. Google Workspace Domain-wide Delegation requires a GCP
 Service Account.
 
-Set the following Helm values:
+Example of Helm values:
 
 ```yaml
 serviceAccount:
   create: true
   name: mcp-oauth2-proxy # Must match the KSA name configured in GCP.
   annotations:
-    iam.gke.io/gcp-service-account: my-sa-name@my-project-id.iam.gserviceaccount.com
+    iam.gke.io/gcp-service-account: MY_SA_NAME@MY_PROJECT_ID.iam.gserviceaccount.com
 ```
 
 #### Via Workload Identity Federation for Kubernetes
@@ -100,7 +102,8 @@ proxy to be able to call the IAM SignJWT API for minting JWTs for Google Workspa
 Domain-wide Delegation. Google Workspace Domain-wide Delegation requires a GCP
 Service Account.
 
-Create a Kubernetes ConfigMap with the JSON configuration:
+Example of Kubernetes ConfigMap with a JSON configuration for
+Workload Identity Federation with Service Account impersonation:
 
 ```yaml
 apiVersion: v1
@@ -116,7 +119,7 @@ data:
       "audience": "//iam.googleapis.com/projects/MY_PROJECT_NUMBER/locations/global/workloadIdentityPools/MY_POOL_ID/providers/MY_PROVIDER_ID",
       "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
       "token_url": "https://sts.googleapis.com/v1/token",
-      "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/my-sa-name@my-project-id.iam.gserviceaccount.com:generateAccessToken",
+      "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/MY_SA_NAME@MY_PROJECT_ID.iam.gserviceaccount.com:generateAccessToken",
       "credential_source": {
         "file": "/var/run/service-account/gcp-token",
         "format": {
@@ -126,7 +129,7 @@ data:
     }
 ```
 
-Then set the following Helm values:
+Example of Helm values to mount the configuration in the proxy:
 
 ```yaml
 serviceAccount:
@@ -157,20 +160,20 @@ env:
 
 #### Via JSON Private Key
 
-This is the most unrecommended method as it involves using a long-lived
-JSON Private Key, which means the rotation and security hygiene is on you.
-Furthermore, if an attacker steals this key, they can impersonate the
-Service Account from anywhere with Internet access.
+This is the most unrecommended method as it involves creating a
+long-lived JSON Private Key where the rotation and security hygiene
+is on you. Furthermore, if an attacker steals this key, they can
+abuse the Service Account with just Internet access.
 
 Google is actively trying to move users away from this method, so if your GCP
 Organization was created after May 2024, you will need to enable the creation of
 [Service Account Keys](https://cloud.google.com/iam/docs/keys-create-delete#allow-creation).
 
-After enabling the creation of Service Account Keys, you can create a new key following
+After enabling the creation of Service Account Keys, you can create a new JSO key following
 [this](https://cloud.google.com/iam/docs/keys-create-delete#iam-service-account-keys-create-console)
 guide.
 
-Create a Kubernetes Secret with the JSON Private Key:
+Example of Kubernetes Secret with a JSON Private Key of a GCP Service Account:
 
 ```yaml
 apiVersion: v1
@@ -183,20 +186,20 @@ stringData:
   credentials.json: |
     {
       "type": "service_account",
-      "project_id": "my-project-id",
+      "project_id": "MY_PROJECT_ID",
       "private_key_id": "43b7ed5d5a204028cee1b628ed9bee81c707ca07",
       "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQ...yIsIN2JY=\n-----END PRIVATE KEY-----\n",
-      "client_email": "my-sa-name@my-project-id.iam.gserviceaccount.com",
+      "client_email": "MY_SA_NAME@MY_PROJECT_ID.iam.gserviceaccount.com",
       "client_id": "114521628649475320846",
       "auth_uri": "https://accounts.google.com/o/oauth2/auth",
       "token_uri": "https://oauth2.googleapis.com/token",
       "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-      "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/my-sa-name%40my-project-id.iam.gserviceaccount.com",
+      "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/MY_SA_NAME%40MY_PROJECT_ID.iam.gserviceaccount.com",
       "universe_domain": "googleapis.com"
     }
 ```
 
-Then set the following Helm values:
+Example of Helm values to mount the key in the proxy:
 
 ```yaml
 volumes:

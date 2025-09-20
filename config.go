@@ -31,6 +31,7 @@ type providerConfig struct {
 	Name                string   `yaml:"name" json:"name"`
 	ClientID            string   `yaml:"clientID" json:"clientID"`
 	ClientSecret        string   `yaml:"clientSecret" json:"clientSecret"`
+	Organization        string   `yaml:"organization" json:"organization"`
 	AllowedEmailDomains []string `yaml:"allowedEmailDomains" json:"allowedEmailDomains"`
 
 	regexAllowedEmailDomains []*regexp.Regexp
@@ -174,7 +175,8 @@ func (p *proxyConfig) validateRedirectURL(url string) bool {
 	return false
 }
 
-func (p *proxyConfig) supportedScopes(ctx context.Context, host string, now time.Time) ([]string, []scopeConfig, error) {
+func (p *proxyConfig) supportedScopes(ctx context.Context, host string) ([]string, []scopeConfig, error) {
+	now := time.Now()
 	for _, h := range p.Hosts {
 		if h.Host != host {
 			continue
