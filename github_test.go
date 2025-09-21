@@ -367,7 +367,7 @@ func TestGitHubProvider_verifyGitHubOrganizationUser(t *testing.T) {
 			username:     "testuser",
 			organization: "test-org",
 			membershipResponse: &githubv3.Membership{
-				State: githubv3.String("active"),
+				State: githubv3.Ptr("active"),
 				User: &githubv3.User{
 					SuspendedAt: &githubv3.Timestamp{Time: time.Time{}},
 				},
@@ -391,7 +391,7 @@ func TestGitHubProvider_verifyGitHubOrganizationUser(t *testing.T) {
 			username:     "testuser",
 			organization: "test-org",
 			membershipResponse: &githubv3.Membership{
-				State: githubv3.String("active"),
+				State: githubv3.Ptr("active"),
 				User: &githubv3.User{
 					SuspendedAt: &githubv3.Timestamp{Time: time.Time{}},
 				},
@@ -412,7 +412,7 @@ func TestGitHubProvider_verifyGitHubOrganizationUser(t *testing.T) {
 			username:     "testuser",
 			organization: "test-org",
 			membershipResponse: &githubv3.Membership{
-				State: githubv3.String("pending"),
+				State: githubv3.Ptr("pending"),
 				User: &githubv3.User{
 					SuspendedAt: &githubv3.Timestamp{Time: time.Time{}},
 				},
@@ -424,7 +424,7 @@ func TestGitHubProvider_verifyGitHubOrganizationUser(t *testing.T) {
 			username:     "testuser",
 			organization: "test-org",
 			membershipResponse: &githubv3.Membership{
-				State: githubv3.String("active"),
+				State: githubv3.Ptr("active"),
 				User: &githubv3.User{
 					SuspendedAt: &githubv3.Timestamp{Time: time.Now()},
 				},
@@ -443,7 +443,7 @@ func TestGitHubProvider_verifyGitHubOrganizationUser(t *testing.T) {
 			username:     "testuser",
 			organization: "test-org",
 			membershipResponse: &githubv3.Membership{
-				State: githubv3.String("active"),
+				State: githubv3.Ptr("active"),
 				User: &githubv3.User{
 					SuspendedAt: &githubv3.Timestamp{Time: time.Time{}},
 				},
