@@ -102,6 +102,11 @@ mcp-oauth2-proxy exposes the following HTTP endpoints:
 - **Automatic Key Rotation**: Handles private key rotation for token signing and verification
 - **Host-based Routing**: Supports multiple MCP servers through HTTP Host header routing
 - **Permissions Consent Screen**: If the MCP server advertises a set of scopes, the user is presented with a consent screen
+- **Audit Logs**: Logs client registration, key generation and token issuance events
+
+**Note:** The signing keys live only in memory and are rotated hourly.
+To force an immediate key rotation, simply restart the proxy.
+This will invalidte all existing tokens.
 
 #### Permissions Consent Screen
 

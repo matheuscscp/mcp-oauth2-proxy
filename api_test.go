@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
@@ -193,17 +194,24 @@ type mockPrivateKeySource struct {
 	publicKeyList []jwk.Key
 }
 
-func (m *mockPrivateKeySource) current(now time.Time) (jwk.Key, error) {
+func (m *mockPrivateKeySource) current(now time.Time) (private jwk.Key, err error) {
 	if m.currentError != nil {
 		return nil, m.currentError
 	}
+	defer func() {
+		public, _ := private.PublicKey()
+		thumbprint, _ := public.Thumbprint(crypto.SHA256)
+		keyID := fmt.Sprintf("%x", thumbprint)
+		private.Set(jwk.KeyIDKey, keyID)
+		public.Set(jwk.KeyIDKey, keyID)
+	}()
 	if m.privateKey != nil {
 		return m.privateKey, nil
 	}
 	// Generate a test key if none provided
 	priv, _ := rsa.GenerateKey(rand.Reader, 2048)
-	key, _ := jwk.Import(priv)
-	return key, nil
+	private, _ = jwk.Import(priv)
+	return private, nil
 }
 
 func (m *mockPrivateKeySource) publicKeys(now time.Time) []jwk.Key {
@@ -393,7 +401,7 @@ func TestOAuthAuthorizationServer(t *testing.T) {
 			checkResponse:  true,
 		},
 		{
-			name: "error fetching supported scopes from invalid MCP endpoint",
+			name: "failed to fetch supported scopes from invalid MCP endpoint",
 			config: &config{
 				Provider: providerConfig{
 					ClientID:     "test-client-id",
@@ -664,7 +672,7 @@ func TestAuthorize(t *testing.T) {
 			expectRedirect: true,
 		},
 		{
-			name:                 "error fetching supported scopes from invalid MCP endpoint",
+			name:                 "failed to fetch supported scopes from invalid MCP endpoint",
 			queryParams:          fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
 			expectedStatus:       http.StatusInternalServerError,
 			expectError:          true,
