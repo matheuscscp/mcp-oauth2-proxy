@@ -1,10 +1,11 @@
 package main
 
 import (
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/json"
 	"fmt"
-	"slices"
 	"sync"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -36,6 +38,7 @@ type automaticPrivateKeySource struct {
 }
 
 type signingKey struct {
+	keyID    string
 	private  jwk.Key
 	public   jwk.Key
 	deadline time.Time
@@ -54,6 +57,15 @@ func newTokenIssuer() *tokenIssuer {
 }
 
 func (t *tokenIssuer) issue(iss, sub, aud string, now time.Time, groups, scopes []string) (string, time.Time, error) {
+	cur, err := t.current(now)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("failed to get current private key: %w", err)
+	}
+	keyID, ok := cur.KeyID()
+	if !ok {
+		return "", time.Time{}, fmt.Errorf("private key has no key ID")
+	}
+
 	exp := now.Add(issuerTokenDuration)
 	nbf := now
 	iat := now
@@ -71,42 +83,43 @@ func (t *tokenIssuer) issue(iss, sub, aud string, now time.Time, groups, scopes 
 		Claim("scopes", scopes).
 		Build()
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("error building token: %w", err)
-	}
-
-	cur, err := t.current(now)
-	if err != nil {
-		return "", time.Time{}, fmt.Errorf("error getting current private key: %w", err)
+		return "", time.Time{}, fmt.Errorf("failed to build token: %w", err)
 	}
 
 	b, err := jwt.Sign(tok, jwt.WithKey(issuerAlgorithm(), cur))
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("error signing token: %w", err)
+		return "", time.Time{}, fmt.Errorf("failed to sign token: %w", err)
 	}
+	signedJWT := string(b)
 
-	return string(b), exp, nil
+	// Log the token issuance.
+	b, _ = json.Marshal(tok)
+	var claims map[string]any
+	_ = json.Unmarshal(b, &claims)
+	logData := logrus.Fields{
+		jwk.KeyIDKey: keyID,
+		"claims":     claims,
+	}
+	logrus.WithField("token", logData).Info("token issued")
+
+	return signedJWT, exp, nil
 }
 
 func (t *tokenIssuer) verify(bearerToken string, now time.Time, iss, aud string) bool {
 	for _, key := range t.publicKeys(now) {
-		token, err := jwt.Parse([]byte(bearerToken),
+
+		token, err := jwt.ParseString(bearerToken,
 			jwt.WithKey(issuerAlgorithm(), key),
-			jwt.WithValidate(true))
+			jwt.WithIssuer(iss),
+			jwt.WithAudience(aud))
 		if err != nil {
 			continue
 		}
-		tokenIssuer, ok := token.Issuer()
-		if !ok || tokenIssuer != iss {
+
+		if exp, ok := token.Expiration(); !ok || now.After(exp) {
 			continue
 		}
-		tokenAudience, ok := token.Audience()
-		if !ok || !slices.Contains(tokenAudience, aud) {
-			continue
-		}
-		tokenExpiration, ok := token.Expiration()
-		if !ok || tokenExpiration.Before(now) {
-			continue
-		}
+
 		return true
 	}
 	return false
@@ -147,22 +160,40 @@ func (a *automaticPrivateKeySource) publicKeys(now time.Time) []jwk.Key {
 func (a *automaticPrivateKeySource) generateNew(now time.Time) (*signingKey, error) {
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		return nil, fmt.Errorf("error generating rsa key: %w", err)
+		return nil, fmt.Errorf("failed to generate rsa key: %w", err)
 	}
 
 	private, err := jwk.Import(priv)
 	if err != nil {
-		return nil, fmt.Errorf("error converting rsa key to jwk: %w", err)
+		return nil, fmt.Errorf("failed to convert rsa key to jwk: %w", err)
 	}
 
 	public, err := private.PublicKey()
 	if err != nil {
-		return nil, fmt.Errorf("error getting public key from jwk: %w", err)
+		return nil, fmt.Errorf("failed to get public key from jwk: %w", err)
 	}
 
+	thumbprint, err := public.Thumbprint(crypto.SHA256)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get thumbprint from public key: %w", err)
+	}
+
+	keyID := fmt.Sprintf("%x", thumbprint)
+	private.Set(jwk.KeyIDKey, keyID)
+	public.Set(jwk.KeyIDKey, keyID)
+
+	deadline := now.Add(issuerTokenDuration)
+
+	logData := logrus.Fields{
+		jwk.KeyIDKey: keyID,
+		"deadline":   deadline,
+	}
+	logrus.WithField("key", logData).Info("key generated")
+
 	return &signingKey{
+		keyID:    keyID,
 		private:  private,
 		public:   public,
-		deadline: now.Add(issuerTokenDuration),
+		deadline: deadline,
 	}, nil
 }

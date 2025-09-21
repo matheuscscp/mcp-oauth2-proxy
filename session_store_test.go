@@ -538,7 +538,7 @@ func TestMemorySessionStore_KeyGenerationError(t *testing.T) {
 	_, err := store.store(session)
 
 	g.Expect(err).To(HaveOccurred())
-	g.Expect(err.Error()).To(ContainSubstring("error generating key for session"))
+	g.Expect(err.Error()).To(ContainSubstring("failed to generate key for session"))
 	g.Expect(err.Error()).To(ContainSubstring("key generation failed"))
 }
 

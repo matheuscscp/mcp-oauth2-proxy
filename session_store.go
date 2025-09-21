@@ -98,7 +98,7 @@ func (m *memorySessionStore) store(s *session) (string, error) {
 		}
 		keyBytes, err := generateKey()
 		if err != nil {
-			return "", fmt.Errorf("error generating key for session: %w", err)
+			return "", fmt.Errorf("failed to generate key for session: %w", err)
 		}
 		key := base64.RawURLEncoding.EncodeToString(keyBytes[:])
 		if _, ok := m.sessions[sessionKey(key)]; ok {

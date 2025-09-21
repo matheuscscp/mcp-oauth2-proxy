@@ -62,7 +62,7 @@ func TestTokenIssuer_issue(t *testing.T) {
 			keySource: &mockPrivateKeySource{
 				currentError: errors.New("key generation failed"),
 			},
-			expectedError: "error getting current private key",
+			expectedError: "failed to get current private key",
 		},
 	}
 

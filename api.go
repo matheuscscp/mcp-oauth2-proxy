@@ -113,7 +113,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 		}
 		respondJSON(w, r, http.StatusCreated, resp)
 
-		l.WithField("registration", req).Info("client registered")
+		l.WithField("client", req).Info("client registered")
 	})
 
 	mux.HandleFunc(pathAuthorize, func(w http.ResponseWriter, r *http.Request) {
