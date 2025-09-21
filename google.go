@@ -48,13 +48,13 @@ func (g *googleProvider) verifyUser(ctx context.Context, ts oauth2.TokenSource) 
 		EmailVerified bool   `json:"email_verified"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&claims); err != nil {
-		return nil, fmt.Errorf("error unmarshaling claims from google userinfo response: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal claims from Google userinfo response: %w", err)
 	}
 	email := claims.Email
 
 	// Verify user.
 	if !claims.EmailVerified {
-		return nil, fmt.Errorf("google email '%s' is not verified", email)
+		return nil, fmt.Errorf("the Google email '%s' is not verified", email)
 	}
 	if !g.validateEmailDomain(email) {
 		return nil, fmt.Errorf("the domain of the email '%s' is not allowed", email)
@@ -66,7 +66,6 @@ func (g *googleProvider) verifyUser(ctx context.Context, ts oauth2.TokenSource) 
 		return nil, fmt.Errorf("failed to verify Google Workspace user info: %w", err)
 	}
 
-	// A user is their email.
 	return &userInfo{
 		username: email,
 		groups:   groups,
@@ -82,10 +81,10 @@ func (g *googleProvider) verifyGoogleWorkspaceUser(ctx context.Context, userEmai
 
 	serviceAccountEmail, err := g.getServiceAccountEmailFromEnv(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get google service account email from environment: %w", err)
+		return nil, fmt.Errorf("failed to get Google Service Account email from environment: %w", err)
 	}
 	if serviceAccountEmail == "" {
-		// No service account email configured, skip Google Workspace verification.
+		// No Service Account email configured, skip Google Workspace verification.
 		return nil, nil
 	}
 
@@ -95,13 +94,13 @@ func (g *googleProvider) verifyGoogleWorkspaceUser(ctx context.Context, userEmai
 		return nil, fmt.Errorf("failed to create Google Admin API client for user %s: %w", userEmail, err)
 	}
 
-	// Verify user exists and is not suspended, archived or deleted.
+	// Verify user in the Google Workspace exists and is not suspended, archived or deleted.
 	user, err := svc.Users.Get(userEmail).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get google user '%s': %w", userEmail, err)
+		return nil, fmt.Errorf("failed to get Google user '%s' in the Google Workspace: %w", userEmail, err)
 	}
 	if user.Archived || user.Suspended || user.DeletionTime != "" {
-		return nil, fmt.Errorf("google user '%s' is archived, suspended or deleted", userEmail)
+		return nil, fmt.Errorf("the Google user '%s' is archived, suspended or deleted in the Google Workspace", userEmail)
 	}
 
 	// List groups the user is a member of in the Google Workspace.
@@ -114,7 +113,7 @@ func (g *googleProvider) verifyGoogleWorkspaceUser(ctx context.Context, userEmai
 		MaxResults(int64(maxGroups)).
 		Do()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list groups for google user '%s': %w", userEmail, err)
+		return nil, fmt.Errorf("failed to list groups for Google user '%s': %w", userEmail, err)
 	}
 	var groups []string
 	for _, g := range resp.Groups {
@@ -136,7 +135,7 @@ func (*googleProvider) getServiceAccountEmailFromEnv(ctx context.Context) (strin
 	if mdClient.OnGCEWithContext(ctx) {
 		email, err := mdClient.EmailWithContext(ctx, "default")
 		if err != nil {
-			return "", fmt.Errorf("failed to get default service account email from metadata server: %w", err)
+			return "", fmt.Errorf("failed to get default Service Account email from metadata server: %w", err)
 		}
 		if googleServiceAccountEmailRegex.MatchString(email) {
 			return email, nil
@@ -157,7 +156,7 @@ func (*googleProvider) getServiceAccountEmailFromEnv(ctx context.Context) (strin
 		ServiceAccountImpersonationURL string `json:"service_account_impersonation_url"`
 	}
 	if err := json.Unmarshal(creds.JSON, &jsonConfig); err != nil {
-		return "", fmt.Errorf("failed to unmarshal google application default credentials JSON: %w", err)
+		return "", fmt.Errorf("failed to unmarshal Google Application Default Credentials JSON: %w", err)
 	}
 	switch {
 	case jsonConfig.ClientEmail != "":
@@ -165,7 +164,7 @@ func (*googleProvider) getServiceAccountEmailFromEnv(ctx context.Context) (strin
 	case jsonConfig.ServiceAccountImpersonationURL != "":
 		matches := googleServiceAccountImpersonationURLRegex.FindStringSubmatch(jsonConfig.ServiceAccountImpersonationURL)
 		if len(matches) != 2 {
-			return "", fmt.Errorf("invalid service account impersonation URL in application default credentials, must match %s",
+			return "", fmt.Errorf("invalid Service Account impersonation URL in Application Default Credentials, must match %s",
 				googleServiceAccountImpersonationURLRegex.String())
 		}
 		return matches[1], nil

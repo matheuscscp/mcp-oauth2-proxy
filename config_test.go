@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"net/http/httptest"
 	"regexp"
 	"testing"
 	"time"
@@ -577,100 +576,13 @@ func TestProxyConfig_supportedScopes(t *testing.T) {
 			g := NewWithT(t)
 			// Use a context for the new signature
 			ctx := context.Background()
-			result, resultConfig, err := tt.proxy.supportedScopes(ctx, tt.host, time.Now())
+			result, resultConfig, err := tt.proxy.supportedScopes(ctx, tt.host)
 			if tt.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(result).To(Equal(tt.expected))
 				g.Expect(resultConfig).To(Equal(tt.expectedConfig))
-			}
-		})
-	}
-}
-
-func TestProxyConfig_supportedScopesCaching(t *testing.T) {
-	tests := []struct {
-		name              string
-		setupMockServer   func() *httptest.Server
-		firstCallTime     time.Time
-		secondCallTime    time.Time
-		expectSecondFetch bool
-	}{
-		{
-			name: "cache hit - second call within cache duration",
-			setupMockServer: func() *httptest.Server {
-				return createMockMCPServer([]scopeConfig{
-					{
-						Name:        "read",
-						Description: "Read access",
-						Tools:       []string{},
-					},
-				})
-			},
-			firstCallTime:     time.Now(),
-			secondCallTime:    time.Now().Add(5 * time.Second), // Within 10s cache duration
-			expectSecondFetch: false,
-		},
-		{
-			name: "cache miss - second call after cache expiration",
-			setupMockServer: func() *httptest.Server {
-				return createMockMCPServer([]scopeConfig{
-					{
-						Name:        "write",
-						Description: "Write access",
-						Tools:       []string{"read"},
-					},
-				})
-			},
-			firstCallTime:     time.Now(),
-			secondCallTime:    time.Now().Add(15 * time.Second), // Beyond 10s cache duration
-			expectSecondFetch: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-
-			mockServer := tt.setupMockServer()
-			defer mockServer.Close()
-
-			proxy := &proxyConfig{
-				Hosts: []*hostConfig{
-					{
-						Host:     "example.com",
-						Endpoint: mockServer.URL,
-					},
-				},
-			}
-
-			ctx := context.Background()
-
-			// First call
-			scopes1, _, err1 := proxy.supportedScopes(ctx, "example.com", tt.firstCallTime)
-			g.Expect(err1).ToNot(HaveOccurred())
-			g.Expect(scopes1).ToNot(BeEmpty())
-
-			// Second call
-			scopes2, _, err2 := proxy.supportedScopes(ctx, "example.com", tt.secondCallTime)
-			g.Expect(err2).ToNot(HaveOccurred())
-			g.Expect(scopes2).To(Equal(scopes1)) // Should return same scopes
-
-			// Verify the host has cached data
-			host := proxy.Hosts[0]
-			g.Expect(host.scopes).ToNot(BeEmpty())
-
-			if tt.expectSecondFetch {
-				// Cache should have been refreshed with new deadline after second call
-				expectedNewDeadline := tt.secondCallTime.Add(10 * time.Second)
-				g.Expect(host.scopesDeadline.After(expectedNewDeadline.Add(-time.Second))).To(BeTrue())
-				g.Expect(host.scopesDeadline.Before(expectedNewDeadline.Add(time.Second))).To(BeTrue())
-			} else {
-				// Cache should still have original deadline from first call
-				expectedOriginalDeadline := tt.firstCallTime.Add(10 * time.Second)
-				g.Expect(host.scopesDeadline.After(expectedOriginalDeadline.Add(-time.Second))).To(BeTrue())
-				g.Expect(host.scopesDeadline.Before(expectedOriginalDeadline.Add(time.Second))).To(BeTrue())
 			}
 		})
 	}

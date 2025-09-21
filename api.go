@@ -53,7 +53,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 	})
 
 	mux.HandleFunc(pathOAuthAuthorizationServer, func(w http.ResponseWriter, r *http.Request) {
-		supportedScopes, _, err := conf.Proxy.supportedScopes(r.Context(), r.Host, time.Now())
+		supportedScopes, _, err := conf.Proxy.supportedScopes(r.Context(), r.Host)
 		if err != nil {
 			fromRequest(r).WithError(err).Error("failed to get supported scopes")
 			http.Error(w, "Failed to get supported scopes", http.StatusInternalServerError)
@@ -120,7 +120,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 		l := fromRequest(r)
 
 		// Fetch supported scopes for the host.
-		supportedScopeNames, supportedScopes, err := conf.Proxy.supportedScopes(r.Context(), r.Host, time.Now())
+		supportedScopeNames, supportedScopes, err := conf.Proxy.supportedScopes(r.Context(), r.Host)
 		if err != nil {
 			l.WithError(err).Error("failed to get supported scopes")
 			http.Error(w, "Failed to get supported scopes", http.StatusInternalServerError)
