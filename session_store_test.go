@@ -170,19 +170,22 @@ func TestMemorySessionStore_StoreUniqueKeys(t *testing.T) {
 
 func TestMemorySessionStore_MaxSizeEviction(t *testing.T) {
 	g := NewWithT(t)
+
+	const maxSize = 10
 	store := newMemorySessionStore()
+	store.maxSize = maxSize
 
 	// Store sessions up to the max size
 	var keys []string
-	for i := 0; i < sessionStoreMaxSize; i++ {
+	for i := 0; i < maxSize; i++ {
 		session := &session{tx: &transaction{host: "example.com"}}
 		key, err := store.store(session)
 		g.Expect(err).ToNot(HaveOccurred())
 		keys = append(keys, key)
 	}
 
-	g.Expect(store.sessions).To(HaveLen(sessionStoreMaxSize))
-	g.Expect(store.evictionQueue).To(HaveLen(sessionStoreMaxSize))
+	g.Expect(store.sessions).To(HaveLen(maxSize))
+	g.Expect(store.evictionQueue).To(HaveLen(maxSize))
 
 	// Store one more session - should evict the oldest
 	extraSession := &session{tx: &transaction{host: "extra.com"}}
@@ -190,8 +193,8 @@ func TestMemorySessionStore_MaxSizeEviction(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 
 	// Size should still be at max
-	g.Expect(store.sessions).To(HaveLen(sessionStoreMaxSize))
-	g.Expect(store.evictionQueue).To(HaveLen(sessionStoreMaxSize))
+	g.Expect(store.sessions).To(HaveLen(maxSize))
+	g.Expect(store.evictionQueue).To(HaveLen(maxSize))
 
 	// The oldest session (first one) should be evicted
 	_, ok := store.retrieve(keys[0])
@@ -485,6 +488,41 @@ func TestMemorySessionStore_KeyGeneration(t *testing.T) {
 		g.Expect(key).ToNot(ContainSubstring("="))
 		g.Expect(len(key)).To(Equal(43)) // 32 bytes base64-encoded without padding = 43 chars
 	}
+}
+
+func TestMemorySessionStore_MaxSessionSize(t *testing.T) {
+	g := NewWithT(t)
+	store := newMemorySessionStore()
+
+	// Create a large string that will exceed the session size limit
+	largeString := make([]byte, sessionMaxSize+1000)
+	for i := range largeString {
+		largeString[i] = 'a'
+	}
+
+	// Create a session with large data
+	session := &session{
+		tx: &transaction{
+			clientParams: transactionClientParams{
+				codeChallenge: string(largeString),
+				redirectURL:   "http://localhost",
+				state:         "test",
+			},
+			codeVerifier: "verifier",
+			host:         "example.com",
+		},
+	}
+
+	// Attempt to store the oversized session
+	_, err := store.store(session)
+
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("session size exceeds maximum"))
+	g.Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("%d", sessionMaxSize)))
+
+	// Verify the session was not stored
+	g.Expect(store.sessions).To(BeEmpty())
+	g.Expect(store.evictionQueue).To(BeEmpty())
 }
 
 func TestMemorySessionStore_KeyGenerationError(t *testing.T) {

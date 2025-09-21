@@ -12,7 +12,8 @@ import (
 
 const (
 	sessionStoreTimeout = stateCookieMaxAge * time.Second
-	sessionStoreMaxSize = 1000
+	sessionStoreMaxSize = 60000 // maximum number of sessions to store
+	sessionMaxSize      = 10000 // in bytes
 )
 
 type sessionStore interface {
@@ -23,6 +24,7 @@ type sessionStore interface {
 }
 
 type memorySessionStore struct {
+	maxSize       int
 	sessions      map[sessionKey]*session
 	evictionQueue []sessionKey
 	mu            sync.Mutex
@@ -38,8 +40,39 @@ type session struct {
 	expiresAt time.Time
 }
 
+func (s *session) size() uint {
+	var size uint
+
+	// Measure transaction fields if present
+	if s.tx != nil {
+		// transactionClientParams fields
+		size += uint(len(s.tx.clientParams.codeChallenge))
+		size += uint(len(s.tx.clientParams.redirectURL))
+		size += uint(len(s.tx.clientParams.state))
+
+		// Count scopes
+		for _, scope := range s.tx.clientParams.scopes {
+			size += uint(len(scope))
+		}
+
+		// transaction fields
+		size += uint(len(s.tx.codeVerifier))
+		size += uint(len(s.tx.host))
+	}
+
+	// Measure oauth2.Token fields if present
+	if s.outcome != nil {
+		size += uint(len(s.outcome.AccessToken))
+		size += uint(len(s.outcome.TokenType))
+		size += uint(len(s.outcome.RefreshToken))
+	}
+
+	return size
+}
+
 func newMemorySessionStore() *memorySessionStore {
 	return &memorySessionStore{
+		maxSize:  sessionStoreMaxSize,
 		sessions: make(map[sessionKey]*session),
 	}
 }
@@ -49,6 +82,10 @@ func (m *memorySessionStore) storeTransaction(tx *transaction) (string, error) {
 }
 
 func (m *memorySessionStore) store(s *session) (string, error) {
+	if size := s.size(); size > sessionMaxSize {
+		return "", fmt.Errorf("session size exceeds maximum of %d bytes: %d", sessionMaxSize, size)
+	}
+
 	m.mu.Lock()
 	defer func() { m.collectGarbage(); m.mu.Unlock() }()
 
@@ -69,7 +106,7 @@ func (m *memorySessionStore) store(s *session) (string, error) {
 		}
 
 		// Enforce maximum size.
-		for len(m.sessions) == sessionStoreMaxSize {
+		for len(m.sessions) == m.maxSize {
 			oldest := m.evictionQueue[0]
 			m.evictionQueue = m.evictionQueue[1:]
 			delete(m.sessions, oldest)
