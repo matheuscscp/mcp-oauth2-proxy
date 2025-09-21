@@ -5,6 +5,11 @@ GitHub OAuth App or a GitHub App, and can optionally be configured to
 also fetch the user's teams in a GitHub Organization by configuring
 a GitHub App private key.
 
+This provider does not support any form of configuring the use of
+short-lived credentials automatically fetched from the execution
+environment. This is a limitation from GitHub. If you need this
+feature, consider using another provider.
+
 To configure this provider, set the following Helm values:
 
 ```yaml
