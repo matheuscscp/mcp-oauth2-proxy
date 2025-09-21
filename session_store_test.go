@@ -177,7 +177,7 @@ func TestMemorySessionStore_MaxSizeEviction(t *testing.T) {
 
 	// Store sessions up to the max size
 	var keys []string
-	for i := 0; i < maxSize; i++ {
+	for range maxSize {
 		session := &session{tx: &transaction{host: "example.com"}}
 		key, err := store.store(session)
 		g.Expect(err).ToNot(HaveOccurred())

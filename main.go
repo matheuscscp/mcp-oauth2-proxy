@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/fips140"
 	"errors"
 	"net/http"
 	"os"
@@ -13,56 +14,60 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func init() {
+func main() {
+	// Listen for termination signals.
+	signalReceived := make(chan os.Signal, 2)
+	signal.Notify(signalReceived, os.Interrupt, syscall.SIGTERM)
+
+	// Initialize logger.
 	logrus.SetFormatter(&logrus.JSONFormatter{
 		TimestampFormat: time.RFC3339Nano,
 	})
-}
 
-func getProviderAndConfig() (provider, *config) {
+	// Check FIPS 140-3 mode.
+	if !fips140.Enabled() {
+		logrus.Fatal("FIPS not enabled")
+	}
+
+	// Load configuration.
 	conf, err := newConfig()
 	if err != nil {
 		logrus.WithError(err).Fatal("failed to create config")
 	}
-
 	redactedConfig := *conf
 	redactedConfig.Provider.ClientSecret = "redacted"
 	logrus.WithField("config", redactedConfig).Info("config loaded")
 
-	p, err := newProvider(&conf.Provider)
+	// Create provider.
+	prov, err := newProvider(&conf.Provider)
 	if err != nil {
 		logrus.WithError(err).Fatal("failed to create provider")
 	}
 
-	return p, conf
-}
-
-func main() {
-	signalReceived := make(chan os.Signal, 2)
-	signal.Notify(signalReceived, os.Interrupt, syscall.SIGTERM)
-
+	// Create server.
 	iss := newTokenIssuer()
-	p, conf := getProviderAndConfig()
-	api := newAPI(iss, p, conf, newMemorySessionStore(), time.Now)
-
+	store := newMemorySessionStore()
+	api := newAPI(iss, prov, conf, store, time.Now)
 	s := newServer(conf, api, prometheus.DefaultRegisterer, prometheus.DefaultGatherer)
 
+	// Start server.
 	go func() {
 		if err := s.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logrus.WithError(err).Fatal("failed to start server")
 		}
 	}()
-	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := s.Shutdown(ctx); err != nil {
-			logrus.WithError(err).Error("failed to shut down server")
-		} else {
-			logrus.Info("server shut down successfully")
-		}
-	}()
 
+	// Wait for termination signal.
 	logrus.Info("server started, waiting for signal")
 	<-signalReceived
 	logrus.Info("signal received, shutting down server")
+
+	// Shutdown server.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.Shutdown(ctx); err != nil {
+		logrus.WithError(err).Error("failed to shut down server")
+	} else {
+		logrus.Info("server shut down successfully")
+	}
 }

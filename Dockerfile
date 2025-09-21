@@ -6,12 +6,12 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY ./*.go ./
+RUN rm *_test.go
 COPY ./scopes.html ./
 
 # CGO_ENABLED=0 to build a statically-linked binary
 # -ldflags '-w -s' to strip debugging information for smaller size
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o mcp-oauth2-proxy \
-    github.com/matheuscscp/mcp-oauth2-proxy
+RUN CGO_ENABLED=0 GOOS=linux GOFIPS140=latest go build -ldflags="-w -s" -o mcp-oauth2-proxy
 
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
