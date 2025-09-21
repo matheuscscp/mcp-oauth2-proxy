@@ -2,16 +2,13 @@ IMG := ghcr.io/matheuscscp/mcp-oauth2-proxy/test:latest
 
 PLATFORM := linux/amd64
 
-.PHONY: run
-run:
-	MCP_OAUTH2_PROXY_CONFIG=config.yaml go run .
-
 .PHONY: tidy
 tidy:
 	go mod tidy
 
 .PHONY: test
 test:
+	go vet ./...
 	go test -v -race -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 

@@ -4,6 +4,7 @@
 [![test](https://github.com/matheuscscp/mcp-oauth2-proxy/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/matheuscscp/mcp-oauth2-proxy/actions/workflows/test.yml)
 [![SLSA 3](https://slsa.dev/images/gh-badge-level3.svg)](https://slsa.dev)
 [![codecov](https://codecov.io/gh/matheuscscp/mcp-oauth2-proxy/branch/main/graph/badge.svg)](https://codecov.io/gh/matheuscscp/mcp-oauth2-proxy)
+![FIPS 140-3 compliant](https://img.shields.io/badge/FIPS_140--3-compliant-brightgreen)
 
 The search is over. Easy OAuth 2.0 proxy for MCP servers.
 
