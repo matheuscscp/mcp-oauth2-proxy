@@ -265,3 +265,5 @@ metadata endpoints, according to the MCP specification.
 - Google [Authorization](docs/google.md#authorization) (via Google Workspace Groups)
 - GitHub [Authentication](docs/github.md#authentication) (via GitHub Username)
 - GitHub [Authorization](docs/github.md#authorization) (via GitHub Organization Teams)
+
+Don't see the provider you need? Just open an issue to let me know!
