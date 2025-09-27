@@ -52,9 +52,9 @@ flowchart TB
 
 ### How it Works
 
-1. **User Authentication**: The user authenticates with the Identity Provider (IdP) through their browser using OAuth2 + PKCE
-2. **AI Client Authorization**: The AI client initiates its own OAuth2 + PKCE flow, treating mcp-oauth2-proxy as the authorization server
-3. **Proxy Mediation**: mcp-oauth2-proxy handles the OAuth flow by redirecting the user to complete authentication with the backing IdP
+1. **AI Client Authorization**: The AI client initiates its own OAuth2 + PKCE flow, treating mcp-oauth2-proxy as the authorization server
+2. **Proxy Mediation**: mcp-oauth2-proxy handles the OAuth flow by redirecting the user to complete authentication with the backing IdP
+3. **User Authentication**: The user authenticates with the Identity Provider (IdP) through their browser using OAuth2 + PKCE
 4. **Token Issuance**: After successful IdP authentication, mcp-oauth2-proxy issues its own JWT token to the AI client
 5. **MCP Access**: AI client uses the JWT token to access MCP servers through the reverse proxy
 6. **Request Routing**: Reverse proxy routes requests to appropriate MCP servers based on the Host header
@@ -212,6 +212,7 @@ For all available configuration options, see the [values.yaml](charts/mcp-oauth2
 - `proxy.hosts`: List of MCP server hosts to proxy requests for.
 - `proxy.hosts[].host`: The HTTP Host header identifying the MCP server.
 - `proxy.hosts[].endpoint`: The endpoint for the MCP server. Will be used for listing tools.
+- `proxy.disableConsentScreen` (optional): Disable the permissions consent screen. One of `true` or `false`. Defaults to `false`.
 - `proxy.allowedRedirectURLs` (optional): List of Go regular expressions for allowed redirect URLs.
 - `proxy.cors` (optional): Enable CORS support. One of `true` or `false`. Defaults to `false`.
 - `ingress.enabled` (optional): Enable ingress for external access. One of `true` or `false`. Defaults to `false`.

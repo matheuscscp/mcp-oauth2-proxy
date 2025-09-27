@@ -128,7 +128,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 		}
 
 		// Render scope selection page if necessary.
-		if !r.URL.Query().Has("skip_scope_selection") && len(supportedScopes) > 0 {
+		if !conf.Proxy.DisableConsentScreen && !r.URL.Query().Has("skip_scope_selection") && len(supportedScopes) > 0 {
 			respondScopeSelectionPage(w, r, supportedScopes)
 			return
 		}
