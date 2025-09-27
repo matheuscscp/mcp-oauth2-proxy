@@ -12,6 +12,7 @@ proxy: # proxy configuration
   hosts: [] # hosts configuration. used for configuration of the MCP server and for rendering the ingress hosts.
     # - host: mcp.example.com
     #   endpoint: http://mcp.mcp-ns.svc.cluster.local./mcp
+  disableConsentScreen: false
   allowedRedirectURLs: [] # list of Go regular expressions
   cors: false
 

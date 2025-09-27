@@ -38,9 +38,10 @@ type providerConfig struct {
 }
 
 type proxyConfig struct {
-	Hosts               []*hostConfig `yaml:"hosts" json:"hosts"`
-	AllowedRedirectURLs []string      `yaml:"allowedRedirectURLs" json:"allowedRedirectURLs"`
-	CORS                bool          `yaml:"cors" json:"cors"`
+	Hosts                []*hostConfig `yaml:"hosts" json:"hosts"`
+	DisableConsentScreen bool          `yaml:"disableConsentScreen" json:"disableConsentScreen"`
+	AllowedRedirectURLs  []string      `yaml:"allowedRedirectURLs" json:"allowedRedirectURLs"`
+	CORS                 bool          `yaml:"cors" json:"cors"`
 
 	regexAllowedRedirectURLs []*regexp.Regexp
 }

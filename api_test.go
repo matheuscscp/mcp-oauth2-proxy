@@ -814,6 +814,46 @@ func TestAuthorize(t *testing.T) {
 				}
 			}(),
 		},
+		{
+			name:                     "consent screen disabled with DisableConsentScreen",
+			queryParams:              fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
+			expectedStatus:           http.StatusSeeOther,
+			expectRedirect:           true,
+			expectScopeSelectionPage: false,
+			config: func() *config {
+				// Create mock MCP server with scopes
+				mockMCP := createMockMCPServer([]scopeConfig{
+					{
+						Name:        "read",
+						Description: "Read access to resources",
+						Tools:       []string{},
+					},
+					{
+						Name:        "write",
+						Description: "Write access to resources",
+						Tools:       []string{"read"},
+					},
+				})
+				return &config{
+					Provider: providerConfig{
+						ClientID:     "test-client-id",
+						ClientSecret: "test-client-secret",
+					},
+					Proxy: proxyConfig{
+						Hosts: []*hostConfig{
+							{
+								Host:     "example.com",
+								Endpoint: mockMCP.URL,
+							},
+						},
+						DisableConsentScreen: true,
+					},
+					Server: serverConfig{
+						Addr: "localhost:8080",
+					},
+				}
+			}(),
+		},
 	}
 
 	for _, tt := range tests {
@@ -867,6 +907,13 @@ func TestAuthorize(t *testing.T) {
 				g.Expect(body).To(ContainSubstring("write"))
 				g.Expect(body).To(ContainSubstring("Read access to resources"))
 				g.Expect(body).To(ContainSubstring("Write access to resources"))
+			} else if tt.config != nil && tt.config.Proxy.DisableConsentScreen && len(tt.config.Proxy.Hosts) > 0 {
+				// When DisableConsentScreen is true and we have MCP hosts configured,
+				// ensure we did NOT render the consent screen
+				body := rec.Body.String()
+				g.Expect(body).ToNot(ContainSubstring("Select Permissions"))
+				// The response should be a redirect, not HTML content
+				g.Expect(rec.Code).To(Equal(http.StatusSeeOther))
 			}
 
 			// Check for authorize with scopes transaction
