@@ -201,9 +201,7 @@ helm install mcp-oauth2-proxy oci://ghcr.io/matheuscscp/mcp-oauth2-proxy/charts/
   --set provider.clientSecret=your-client-secret
 ```
 
-For all available configuration options, see the [values.yaml](charts/mcp-oauth2-proxy/values.yaml) file.
-
-#### Key Helm Values
+The main configuration options are:
 
 - `provider.name`: The identifier of the Identity Provider.
 - `provider.clientID`: OAuth2 client ID from your IdP.
@@ -212,11 +210,14 @@ For all available configuration options, see the [values.yaml](charts/mcp-oauth2
 - `proxy.hosts`: List of MCP server hosts to proxy requests for.
 - `proxy.hosts[].host`: The HTTP Host header identifying the MCP server.
 - `proxy.hosts[].endpoint`: The endpoint for the MCP server. Will be used for listing tools.
-- `proxy.disableConsentScreen` (optional): Disable the permissions consent screen. One of `true` or `false`. Defaults to `false`.
+- `proxy.disableConsentScreen` (optional): Disable the permissions consent screen. Defaults to `false`.
 - `proxy.allowedRedirectURLs` (optional): List of Go regular expressions for allowed redirect URLs.
-- `proxy.cors` (optional): Enable CORS support. One of `true` or `false`. Defaults to `false`.
-- `ingress.enabled` (optional): Enable ingress for external access. One of `true` or `false`. Defaults to `false`.
-- `podMonitor.enabled` (optional): Enable Prometheus monitoring. One of `true` or `false`. Defaults to `false`.
+- `proxy.cors` (optional): Enable CORS support. Defaults to `false`.
+- `networkPolicy.create` (optional): Create a NetworkPolicy to restrict access to the proxy. Defaults to `true`.
+- `ingress.enabled` (optional): Enable ingress for external access. Defaults to `false`.
+- `podMonitor.enabled` (optional): Enable Prometheus monitoring. Defaults to `false`.
+
+For all the available options, see [values.yaml](charts/mcp-oauth2-proxy/values.yaml).
 
 #### Integration with ingress-nginx
 

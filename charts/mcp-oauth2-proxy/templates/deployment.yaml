@@ -5,7 +5,7 @@ metadata:
   labels:
     {{- include "mcp-oauth2-proxy.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: 1
   selector:
     matchLabels:
       {{- include "mcp-oauth2-proxy.selectorLabels" . | nindent 6 }}
