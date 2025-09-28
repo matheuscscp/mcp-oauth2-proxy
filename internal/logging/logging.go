@@ -3,11 +3,18 @@ package logging
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
 
 type contextKeyLogger struct{}
+
+func init() {
+	logrus.SetFormatter(&logrus.JSONFormatter{
+		TimestampFormat: time.RFC3339Nano,
+	})
+}
 
 func FromRequest(r *http.Request) logrus.FieldLogger {
 	return FromContext(r.Context())

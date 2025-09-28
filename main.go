@@ -10,22 +10,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
 
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 	provider "github.com/matheuscscp/mcp-oauth2-proxy/internal/provider/factory"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/server"
 )
 
 func main() {
 	// Listen for termination signals.
 	signalReceived := make(chan os.Signal, 2)
 	signal.Notify(signalReceived, os.Interrupt, syscall.SIGTERM)
-
-	// Initialize logger.
-	logrus.SetFormatter(&logrus.JSONFormatter{
-		TimestampFormat: time.RFC3339Nano,
-	})
 
 	// Check FIPS 140-3 mode.
 	if !fips140.Enabled() {
@@ -48,10 +43,7 @@ func main() {
 	}
 
 	// Create server.
-	iss := newTokenIssuer()
-	store := newMemorySessionStore()
-	api := newAPI(iss, p, conf, store, time.Now)
-	s := newServer(conf, api, prometheus.DefaultRegisterer, prometheus.DefaultGatherer)
+	s := server.New(conf, p)
 
 	// Start server.
 	go func() {
