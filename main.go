@@ -12,6 +12,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
+
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 )
 
 func main() {
@@ -30,7 +32,7 @@ func main() {
 	}
 
 	// Load configuration.
-	conf, err := newConfig()
+	conf, err := config.Load()
 	if err != nil {
 		logrus.WithError(err).Fatal("failed to create config")
 	}

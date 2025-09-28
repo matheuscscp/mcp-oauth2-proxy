@@ -15,6 +15,8 @@ import (
 	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
+
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 )
 
 type githubProvider struct {
@@ -26,7 +28,7 @@ const (
 	envGitHubAppPrivateKey = "GITHUB_APP_PRIVATE_KEY"
 )
 
-func newGitHubProvider(conf *providerConfig) (*githubProvider, error) {
+func newGitHubProvider(conf *config.ProviderConfig) (*githubProvider, error) {
 	hasOrg := conf.Organization != ""
 	hasAppPK := os.Getenv(envGitHubAppPrivateKey) != ""
 	if hasAppPK != hasOrg {
@@ -113,7 +115,7 @@ func (g *githubProvider) verifyGitHubOrganizationUser(ctx context.Context, usern
 	variables := map[string]any{
 		"org":        githubv4.String(g.organization),
 		"user":       githubv4.String(username),
-		"maxResults": githubv4.Int(maxGroups),
+		"maxResults": githubv4.Int(config.MaxGroups),
 		"query":      githubv4.String(""),
 	}
 	if err := apiv4.Query(ctx, &q, variables); err != nil {

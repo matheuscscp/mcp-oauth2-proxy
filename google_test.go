@@ -8,13 +8,14 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"regexp"
 	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 )
 
 func TestGoogleProvider_oauth2Config(t *testing.T) {
@@ -974,20 +975,17 @@ func TestGoogleProvider_Integration(t *testing.T) {
 	g := NewWithT(t)
 
 	// Test the integration between newProvider and googleProvider
-	config := &config{
-		Provider: providerConfig{
+	config := &config.Config{
+		Provider: config.ProviderConfig{
 			Name:                "google",
+			ClientID:            "mock",
+			ClientSecret:        "mock",
 			AllowedEmailDomains: []string{"example\\.com"},
 		},
 	}
 
-	// Initialize the regex patterns (normally done by validateAndInitialize)
-	config.Provider.regexAllowedEmailDomains = make([]*regexp.Regexp, 0)
-	for _, pattern := range config.Provider.AllowedEmailDomains {
-		regex, err := regexp.Compile(pattern)
-		g.Expect(err).ToNot(HaveOccurred())
-		config.Provider.regexAllowedEmailDomains = append(config.Provider.regexAllowedEmailDomains, regex)
-	}
+	err := config.ValidateAndInitialize()
+	g.Expect(err).ToNot(HaveOccurred())
 
 	provider, err := newProvider(&config.Provider)
 	g.Expect(err).ToNot(HaveOccurred())

@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/constants"
 )
 
 // transaction represents an OAuth 2.0 authorization request.
@@ -24,15 +27,15 @@ type transactionClientParams struct {
 	state         string
 }
 
-func newTransaction(conf *proxyConfig, r *http.Request,
+func newTransaction(conf *config.ProxyConfig, r *http.Request,
 	codeVerifier string, hostScopes []string) (*transaction, error) {
 
 	host := r.Host
 
 	q := r.URL.Query()
-	codeChallenge := q.Get(queryParamCodeChallenge)
-	redirectURI := q.Get(queryParamRedirectURI)
-	state := q.Get(queryParamState)
+	codeChallenge := q.Get(constants.QueryParamCodeChallenge)
+	redirectURI := q.Get(constants.QueryParamRedirectURI)
+	state := q.Get(constants.QueryParamState)
 
 	supportedScopes := make(map[string]bool, len(hostScopes))
 	for _, s := range hostScopes {
@@ -40,22 +43,22 @@ func newTransaction(conf *proxyConfig, r *http.Request,
 	}
 
 	scopes := []string{}
-	for s := range strings.SplitSeq(q.Get(queryParamScopes), " ") {
+	for s := range strings.SplitSeq(q.Get(constants.QueryParamScopes), " ") {
 		if s != "" && supportedScopes[s] {
 			scopes = append(scopes, s)
 		}
 	}
 
-	if !conf.validateRedirectURL(redirectURI) {
-		return nil, fmt.Errorf("%s is not in the allow list: %s", queryParamRedirectURI, redirectURI)
+	if !conf.ValidateRedirectURL(redirectURI) {
+		return nil, fmt.Errorf("%s is not in the allow list: %s", constants.QueryParamRedirectURI, redirectURI)
 	}
 
-	if rp, allowedRP := q.Get(queryParamResponseType), authorizationServerResponseType; rp != allowedRP {
-		return nil, fmt.Errorf("'%s' is not supported for %s, only %s is allowed", rp, queryParamResponseType, allowedRP)
+	if rp, allowedRP := q.Get(constants.QueryParamResponseType), constants.AuthorizationServerResponseType; rp != allowedRP {
+		return nil, fmt.Errorf("'%s' is not supported for %s, only %s is allowed", rp, constants.QueryParamResponseType, allowedRP)
 	}
 
-	if ccm, allowedCCM := q.Get(queryParamCodeChallengeMethod), authorizationServerCodeChallengeMethod; ccm != allowedCCM {
-		return nil, fmt.Errorf("'%s' is not supported for %s, only %s is allowed", ccm, queryParamCodeChallengeMethod, allowedCCM)
+	if ccm, allowedCCM := q.Get(constants.QueryParamCodeChallengeMethod), constants.AuthorizationServerCodeChallengeMethod; ccm != allowedCCM {
+		return nil, fmt.Errorf("'%s' is not supported for %s, only %s is allowed", ccm, constants.QueryParamCodeChallengeMethod, allowedCCM)
 	}
 
 	return &transaction{

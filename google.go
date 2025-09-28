@@ -18,6 +18,8 @@ import (
 	admin "google.golang.org/api/admin/directory/v1"
 	"google.golang.org/api/iamcredentials/v1"
 	"google.golang.org/api/option"
+
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 )
 
 type googleProvider struct {
@@ -109,9 +111,9 @@ func (g *googleProvider) verifyGoogleWorkspaceUser(ctx context.Context, userEmai
 		Groups.
 		List().
 		Context(ctx).
-		Domain(getEmailDomain(userEmail)).
+		Domain(config.GetEmailDomain(userEmail)).
 		UserKey(userEmail).
-		MaxResults(int64(maxGroups)).
+		MaxResults(int64(config.MaxGroups)).
 		Do()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list groups for Google user '%s': %w", userEmail, err)

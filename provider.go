@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"golang.org/x/oauth2"
+
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 )
 
 const (
@@ -17,10 +19,10 @@ type provider interface {
 	verifyUser(ctx context.Context, ts oauth2.TokenSource) (*userInfo, error)
 }
 
-func newProvider(conf *providerConfig) (provider, error) {
+func newProvider(conf *config.ProviderConfig) (provider, error) {
 	switch conf.Name {
 	case providerGoogle:
-		return &googleProvider{validateEmailDomain: conf.validateEmailDomain}, nil
+		return &googleProvider{validateEmailDomain: conf.ValidateEmailDomain}, nil
 	case providerGitHub:
 		return newGitHubProvider(conf)
 	default:

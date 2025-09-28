@@ -7,6 +7,8 @@ import (
 
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 )
 
 func TestServer(t *testing.T) {
@@ -20,8 +22,8 @@ func TestServer(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		})
 
-		conf := &config{
-			Server: serverConfig{
+		conf := &config.Config{
+			Server: config.ServerConfig{
 				Addr: ":8080",
 			},
 		}
@@ -59,8 +61,8 @@ func TestServer(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		})
 
-		conf := &config{
-			Server: serverConfig{
+		conf := &config.Config{
+			Server: config.ServerConfig{
 				Addr: ":8080",
 			},
 		}
@@ -89,8 +91,8 @@ func TestServer(t *testing.T) {
 			w.WriteHeader(http.StatusTeapot) // Unique status to verify API was called
 		})
 
-		conf := &config{
-			Server: serverConfig{
+		conf := &config.Config{
+			Server: config.ServerConfig{
 				Addr: ":8080",
 			},
 		}
@@ -114,11 +116,11 @@ func TestServer(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		})
 
-		conf := &config{
-			Proxy: proxyConfig{
+		conf := &config.Config{
+			Proxy: config.ProxyConfig{
 				CORS: true,
 			},
-			Server: serverConfig{
+			Server: config.ServerConfig{
 				Addr: ":8080",
 			},
 		}
@@ -208,8 +210,8 @@ func TestServer(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		})
 
-		conf := &config{
-			Server: serverConfig{
+		conf := &config.Config{
+			Server: config.ServerConfig{
 				Addr: ":8080",
 			},
 		}
@@ -237,8 +239,8 @@ func TestServer(t *testing.T) {
 			w.WriteHeader(http.StatusCreated)
 		})
 
-		conf := &config{
-			Server: serverConfig{
+		conf := &config.Config{
+			Server: config.ServerConfig{
 				Addr: ":8080",
 			},
 		}

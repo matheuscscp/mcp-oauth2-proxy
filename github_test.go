@@ -17,19 +17,21 @@ import (
 	. "github.com/onsi/gomega"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
+
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 )
 
 func TestNewGitHubProvider(t *testing.T) {
 	tests := []struct {
 		name              string
-		config            *providerConfig
+		config            *config.ProviderConfig
 		setupEnv          bool
 		privateKeyContent string
 		expectedError     string
 	}{
 		{
 			name: "valid configuration with organization and private key",
-			config: &providerConfig{
+			config: &config.ProviderConfig{
 				ClientID:     "test-app-id",
 				Organization: "test-org",
 			},
@@ -39,7 +41,7 @@ func TestNewGitHubProvider(t *testing.T) {
 		},
 		{
 			name: "valid configuration without organization and private key",
-			config: &providerConfig{
+			config: &config.ProviderConfig{
 				ClientID:     "test-app-id",
 				Organization: "",
 			},
@@ -48,7 +50,7 @@ func TestNewGitHubProvider(t *testing.T) {
 		},
 		{
 			name: "invalid - organization set but no private key",
-			config: &providerConfig{
+			config: &config.ProviderConfig{
 				ClientID:     "test-app-id",
 				Organization: "test-org",
 			},
@@ -57,7 +59,7 @@ func TestNewGitHubProvider(t *testing.T) {
 		},
 		{
 			name: "invalid - private key set but no organization",
-			config: &providerConfig{
+			config: &config.ProviderConfig{
 				ClientID:     "test-app-id",
 				Organization: "",
 			},
@@ -785,7 +787,7 @@ func TestGitHubProvider_Integration(t *testing.T) {
 
 	// Test without organization
 	t.Run("without organization", func(t *testing.T) {
-		config := &providerConfig{
+		config := &config.ProviderConfig{
 			Name:         "github",
 			ClientID:     "test-client-id",
 			Organization: "",
@@ -836,7 +838,7 @@ func TestGitHubProvider_Integration(t *testing.T) {
 
 		t.Setenv(envGitHubAppPrivateKey, tmpFile.Name())
 
-		config := &providerConfig{
+		config := &config.ProviderConfig{
 			Name:         "github",
 			ClientID:     "test-app-id",
 			Organization: "test-org",

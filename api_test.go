@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -21,10 +20,13 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 	. "github.com/onsi/gomega"
 	"golang.org/x/oauth2"
+
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/constants"
 )
 
 // createMockMCPServer creates a test MCP server with scopes metadata
-func createMockMCPServer(scopes []scopeConfig) *httptest.Server {
+func createMockMCPServer(scopes []config.ScopeConfig) *httptest.Server {
 	mcpServer := server.NewMCPServer("test-mcp-server", "1.0.0",
 		server.WithToolCapabilities(true),
 		server.WithHooks(&server.Hooks{
@@ -37,30 +39,6 @@ func createMockMCPServer(scopes []scopeConfig) *httptest.Server {
 						}
 					}
 					result.Meta.AdditionalFields["scopes"] = scopes
-				},
-			},
-		}),
-	)
-
-	// Create and return the test server
-	return server.NewTestStreamableHTTPServer(mcpServer)
-}
-
-// createMockMCPServerWithBogusJSON creates a test MCP server that returns invalid JSON in metadata
-func createMockMCPServerWithBogusJSON() *httptest.Server {
-	mcpServer := server.NewMCPServer("test-mcp-server", "1.0.0",
-		server.WithToolCapabilities(true),
-		server.WithHooks(&server.Hooks{
-			OnAfterListTools: []server.OnAfterListToolsFunc{
-				func(ctx context.Context, id any, message *mcp.ListToolsRequest, result *mcp.ListToolsResult) {
-					// Add invalid data that will cause JSON unmarshaling to fail
-					if result.Meta == nil {
-						result.Meta = &mcp.Meta{
-							AdditionalFields: make(map[string]interface{}),
-						}
-					}
-					// Create a struct that will marshal to JSON but unmarshal incorrectly
-					result.Meta.AdditionalFields["scopes"] = "this is not a valid scope array"
 				},
 			},
 		}),
@@ -135,14 +113,14 @@ func (m *mockSessionStore) retrieveTransaction(key string) (*transaction, bool) 
 	return m.sessionStore.retrieveTransaction(key)
 }
 
-func newTestConfig() *config {
-	return &config{
-		Provider: providerConfig{
+func newTestConfig() *config.Config {
+	return &config.Config{
+		Provider: config.ProviderConfig{
 			ClientID:     "test-client-id",
 			ClientSecret: "test-client-secret",
 		},
-		Proxy: proxyConfig{
-			Hosts: []*hostConfig{
+		Proxy: config.ProxyConfig{
+			Hosts: []*config.HostConfig{
 				{
 					Host: "example.com",
 				},
@@ -151,30 +129,19 @@ func newTestConfig() *config {
 				},
 			},
 		},
-		Server: serverConfig{
+		Server: config.ServerConfig{
 			Addr: "localhost:8080",
 		},
 	}
 }
 
-func compileRegexList(in []string, out *[]*regexp.Regexp) error {
-	for _, s := range in {
-		r, err := regexp.Compile(s)
-		if err != nil {
-			return fmt.Errorf("failed to compile regex '%s': %w", s, err)
-		}
-		*out = append(*out, r)
-	}
-	return nil
-}
-
-func setupConfig(g *WithT, conf *config) *config {
+func setupConfig(g *WithT, conf *config.Config) *config.Config {
 	if conf == nil {
-		return newTestConfig()
+		conf = newTestConfig()
 	}
-	if err := compileRegexList(conf.Proxy.AllowedRedirectURLs, &conf.Proxy.regexAllowedRedirectURLs); err != nil {
-		g.Expect(err).ToNot(HaveOccurred())
-	}
+	conf.Provider.Name = "mock"
+	err := conf.ValidateAndInitialize()
+	g.Expect(err).ToNot(HaveOccurred())
 	return conf
 }
 
@@ -437,7 +404,7 @@ func TestOAuthProtectedResource(t *testing.T) {
 func TestOAuthAuthorizationServer(t *testing.T) {
 	tests := []struct {
 		name           string
-		config         *config
+		config         *config.Config
 		requestHost    string
 		expectedStatus int
 		checkResponse  bool
@@ -451,20 +418,20 @@ func TestOAuthAuthorizationServer(t *testing.T) {
 		},
 		{
 			name: "successful response with no endpoint configured",
-			config: &config{
-				Provider: providerConfig{
+			config: &config.Config{
+				Provider: config.ProviderConfig{
 					ClientID:     "test-client-id",
 					ClientSecret: "test-client-secret",
 				},
-				Proxy: proxyConfig{
-					Hosts: []*hostConfig{
+				Proxy: config.ProxyConfig{
+					Hosts: []*config.HostConfig{
 						{
 							Host: "example.com",
 							// No endpoint configured - should still work
 						},
 					},
 				},
-				Server: serverConfig{
+				Server: config.ServerConfig{
 					Addr: "localhost:8080",
 				},
 			},
@@ -474,20 +441,20 @@ func TestOAuthAuthorizationServer(t *testing.T) {
 		},
 		{
 			name: "failed to fetch supported scopes from invalid MCP endpoint",
-			config: &config{
-				Provider: providerConfig{
+			config: &config.Config{
+				Provider: config.ProviderConfig{
 					ClientID:     "test-client-id",
 					ClientSecret: "test-client-secret",
 				},
-				Proxy: proxyConfig{
-					Hosts: []*hostConfig{
+				Proxy: config.ProxyConfig{
+					Hosts: []*config.HostConfig{
 						{
 							Host:     "example.com",
 							Endpoint: "http://invalid-endpoint-that-does-not-exist:99999",
 						},
 					},
 				},
-				Server: serverConfig{
+				Server: config.ServerConfig{
 					Addr: "localhost:8080",
 				},
 			},
@@ -531,12 +498,12 @@ func TestOAuthAuthorizationServer(t *testing.T) {
 				g.Expect(response["authorization_endpoint"]).To(Equal("https://example.com" + pathAuthorize))
 				g.Expect(response["token_endpoint"]).To(Equal("https://example.com" + pathToken))
 				g.Expect(response["registration_endpoint"]).To(Equal("https://example.com" + pathRegister))
-				g.Expect(response["code_challenge_methods_supported"]).To(Equal([]any{authorizationServerCodeChallengeMethod}))
-				g.Expect(response["grant_types_supported"]).To(Equal([]any{authorizationServerGrantType}))
-				g.Expect(response["response_modes_supported"]).To(Equal([]any{authorizationServerResponseMode}))
-				g.Expect(response["response_types_supported"]).To(Equal([]any{authorizationServerResponseType}))
-				g.Expect(response["scopes_supported"]).To(Equal([]any{authorizationServerDefaultScope}))
-				g.Expect(response["token_endpoint_auth_methods_supported"]).To(Equal([]any{authorizationServerTokenEndpointAuthMethod}))
+				g.Expect(response["code_challenge_methods_supported"]).To(Equal([]any{constants.AuthorizationServerCodeChallengeMethod}))
+				g.Expect(response["grant_types_supported"]).To(Equal([]any{constants.AuthorizationServerGrantType}))
+				g.Expect(response["response_modes_supported"]).To(Equal([]any{constants.AuthorizationServerResponseMode}))
+				g.Expect(response["response_types_supported"]).To(Equal([]any{constants.AuthorizationServerResponseType}))
+				g.Expect(response["scopes_supported"]).To(Equal([]any{constants.AuthorizationServerDefaultScope}))
+				g.Expect(response["token_endpoint_auth_methods_supported"]).To(Equal([]any{constants.AuthorizationServerTokenEndpointAuthMethod}))
 			}
 		})
 	}
@@ -548,7 +515,7 @@ func TestRegister(t *testing.T) {
 		requestBody          string
 		expectedStatus       int
 		checkResponse        bool
-		config               *config
+		config               *config.Config
 		expectRedirectURIs   bool
 		expectedRedirectURIs []string
 	}{
@@ -566,18 +533,18 @@ func TestRegister(t *testing.T) {
 			name:           "invalid redirect URI not in allow list",
 			requestBody:    `{"redirect_uris": ["https://evil.com/callback"]}`,
 			expectedStatus: http.StatusBadRequest,
-			config: &config{
-				Provider: providerConfig{
+			config: &config.Config{
+				Provider: config.ProviderConfig{
 					ClientID:     "test-client-id",
 					ClientSecret: "test-client-secret",
 				},
-				Proxy: proxyConfig{
-					Hosts: []*hostConfig{
+				Proxy: config.ProxyConfig{
+					Hosts: []*config.HostConfig{
 						{Host: "example.com"},
 					},
 					AllowedRedirectURLs: []string{"^https://example\\.com/.*"},
 				},
-				Server: serverConfig{
+				Server: config.ServerConfig{
 					Addr: "localhost:8080",
 				},
 			},
@@ -596,18 +563,18 @@ func TestRegister(t *testing.T) {
 			checkResponse:        true,
 			expectRedirectURIs:   true,
 			expectedRedirectURIs: []string{"https://any-domain.com/callback"},
-			config: &config{
-				Provider: providerConfig{
+			config: &config.Config{
+				Provider: config.ProviderConfig{
 					ClientID:     "test-client-id",
 					ClientSecret: "test-client-secret",
 				},
-				Proxy: proxyConfig{
-					Hosts: []*hostConfig{
+				Proxy: config.ProxyConfig{
+					Hosts: []*config.HostConfig{
 						{Host: "example.com"},
 					},
 					AllowedRedirectURLs: []string{}, // Empty list should allow any URL
 				},
-				Server: serverConfig{
+				Server: config.ServerConfig{
 					Addr: "localhost:8080",
 				},
 			},
@@ -619,18 +586,18 @@ func TestRegister(t *testing.T) {
 			checkResponse:        true,
 			expectRedirectURIs:   true,
 			expectedRedirectURIs: []string{"https://example.com/callback"},
-			config: &config{
-				Provider: providerConfig{
+			config: &config.Config{
+				Provider: config.ProviderConfig{
 					ClientID:     "test-client-id",
 					ClientSecret: "test-client-secret",
 				},
-				Proxy: proxyConfig{
-					Hosts: []*hostConfig{
+				Proxy: config.ProxyConfig{
+					Hosts: []*config.HostConfig{
 						{Host: "example.com"},
 					},
 					AllowedRedirectURLs: []string{"^https://example\\.com/.*"}, // This should match
 				},
-				Server: serverConfig{
+				Server: config.ServerConfig{
 					Addr: "localhost:8080",
 				},
 			},
@@ -660,7 +627,7 @@ func TestRegister(t *testing.T) {
 				response := parseJSONResponse(g, rec.Body.Bytes())
 
 				g.Expect(response["client_id"]).To(Equal("mcp-oauth2-proxy"))
-				g.Expect(response["token_endpoint_auth_method"]).To(Equal(authorizationServerTokenEndpointAuthMethod))
+				g.Expect(response["token_endpoint_auth_method"]).To(Equal(constants.AuthorizationServerTokenEndpointAuthMethod))
 
 				if tt.expectRedirectURIs {
 					if tt.expectedRedirectURIs != nil {
@@ -690,7 +657,7 @@ func TestAuthorize(t *testing.T) {
 		expectedErrorMessage     string
 		sessionStore             sessionStore
 		pkceError                bool
-		config                   *config
+		config                   *config.Config
 		expectScopeSelectionPage bool
 		expectScopeTransaction   bool
 		expectValidatedScopes    bool
@@ -724,102 +691,102 @@ func TestAuthorize(t *testing.T) {
 		},
 		{
 			name:                 "invalid redirect URL",
-			queryParams:          fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://evil.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
+			queryParams:          fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://evil.com/callback&state=test-state", constants.AuthorizationServerCodeChallengeMethod),
 			expectedStatus:       http.StatusBadRequest,
 			expectedErrorMessage: "Invalid parameters: redirect_uri is not in the allow list: https://evil.com/callback",
-			config: &config{
-				Provider: providerConfig{
+			config: &config.Config{
+				Provider: config.ProviderConfig{
 					ClientID:     "test-client-id",
 					ClientSecret: "test-client-secret",
 				},
-				Proxy: proxyConfig{
-					Hosts: []*hostConfig{
+				Proxy: config.ProxyConfig{
+					Hosts: []*config.HostConfig{
 						{Host: "example.com"},
 					},
 					AllowedRedirectURLs: []string{"^https://example\\.com/.*"},
 				},
-				Server: serverConfig{
+				Server: config.ServerConfig{
 					Addr: "localhost:8080",
 				},
 			},
 		},
 		{
 			name:                 "session store error",
-			queryParams:          fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
+			queryParams:          fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", constants.AuthorizationServerCodeChallengeMethod),
 			expectedStatus:       http.StatusInternalServerError,
 			expectedErrorMessage: "Failed to generate state",
 			sessionStore:         &mockSessionStore{sessionStore: newMemorySessionStore(), storeTransactionError: errors.New("session store failure")},
 		},
 		{
 			name:                 "PKCE generation error",
-			queryParams:          fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
+			queryParams:          fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", constants.AuthorizationServerCodeChallengeMethod),
 			expectedStatus:       http.StatusInternalServerError,
 			expectedErrorMessage: "Failed to generate code verifier",
 			pkceError:            true,
 		},
 		{
 			name:           "valid authorize request",
-			queryParams:    fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
+			queryParams:    fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", constants.AuthorizationServerCodeChallengeMethod),
 			expectedStatus: http.StatusSeeOther,
 			expectRedirect: true,
 		},
 		{
 			name:                     "no scope selection when endpoint is empty",
-			queryParams:              fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
+			queryParams:              fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", constants.AuthorizationServerCodeChallengeMethod),
 			expectedStatus:           http.StatusSeeOther,
 			expectRedirect:           true,
 			expectScopeSelectionPage: false,
-			config: &config{
-				Provider: providerConfig{
+			config: &config.Config{
+				Provider: config.ProviderConfig{
 					ClientID:     "test-client-id",
 					ClientSecret: "test-client-secret",
 				},
-				Proxy: proxyConfig{
-					Hosts: []*hostConfig{
+				Proxy: config.ProxyConfig{
+					Hosts: []*config.HostConfig{
 						{
 							Host: "example.com",
 							// No endpoint configured - should not fetch scopes
 						},
 					},
 				},
-				Server: serverConfig{
+				Server: config.ServerConfig{
 					Addr: "localhost:8080",
 				},
 			},
 		},
 		{
 			name:                 "failed to fetch supported scopes from invalid MCP endpoint",
-			queryParams:          fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
+			queryParams:          fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", constants.AuthorizationServerCodeChallengeMethod),
 			expectedStatus:       http.StatusInternalServerError,
 			expectError:          true,
 			expectedErrorMessage: "Failed to get supported scopes",
-			config: &config{
-				Provider: providerConfig{
+			config: &config.Config{
+				Provider: config.ProviderConfig{
 					ClientID:     "test-client-id",
 					ClientSecret: "test-client-secret",
 				},
-				Proxy: proxyConfig{
-					Hosts: []*hostConfig{
+				Proxy: config.ProxyConfig{
+					Hosts: []*config.HostConfig{
 						{
 							Host:     "example.com",
 							Endpoint: "http://invalid-endpoint-that-does-not-exist:99999",
 						},
 					},
 				},
-				Server: serverConfig{
+				Server: config.ServerConfig{
 					Addr: "localhost:8080",
 				},
 			},
 		},
 		{
 			name:                     "scope selection page rendered",
-			queryParams:              fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
+			queryParams:              fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", constants.AuthorizationServerCodeChallengeMethod),
 			expectedStatus:           http.StatusOK,
 			expectRedirect:           false,
 			expectScopeSelectionPage: true,
-			config: func() *config {
+			config: func() *config.Config {
 				// Create mock MCP server with scopes
-				mockMCP := createMockMCPServer([]scopeConfig{
+				mockMCP := createMockMCPServer([]config.ScopeConfig{
 					{
 						Name:        "read",
 						Description: "Read access to resources",
@@ -831,20 +798,20 @@ func TestAuthorize(t *testing.T) {
 						Tools:       []string{"read"},
 					},
 				})
-				return &config{
-					Provider: providerConfig{
+				return &config.Config{
+					Provider: config.ProviderConfig{
 						ClientID:     "test-client-id",
 						ClientSecret: "test-client-secret",
 					},
-					Proxy: proxyConfig{
-						Hosts: []*hostConfig{
+					Proxy: config.ProxyConfig{
+						Hosts: []*config.HostConfig{
 							{
 								Host:     "example.com",
 								Endpoint: mockMCP.URL,
 							},
 						},
 					},
-					Server: serverConfig{
+					Server: config.ServerConfig{
 						Addr: "localhost:8080",
 					},
 				}
@@ -852,13 +819,13 @@ func TestAuthorize(t *testing.T) {
 		},
 		{
 			name:                   "authorize with selected scopes",
-			queryParams:            fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state&scope=read%%20write&skip_scope_selection=true", authorizationServerCodeChallengeMethod),
+			queryParams:            fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state&scope=read%%20write&skip_scope_selection=true", constants.AuthorizationServerCodeChallengeMethod),
 			expectedStatus:         http.StatusSeeOther,
 			expectRedirect:         true,
 			expectScopeTransaction: true,
-			config: func() *config {
+			config: func() *config.Config {
 				// Create mock MCP server with scopes
-				mockMCP := createMockMCPServer([]scopeConfig{
+				mockMCP := createMockMCPServer([]config.ScopeConfig{
 					{
 						Name:        "read",
 						Description: "Read access to resources",
@@ -870,20 +837,20 @@ func TestAuthorize(t *testing.T) {
 						Tools:       []string{"read"},
 					},
 				})
-				return &config{
-					Provider: providerConfig{
+				return &config.Config{
+					Provider: config.ProviderConfig{
 						ClientID:     "test-client-id",
 						ClientSecret: "test-client-secret",
 					},
-					Proxy: proxyConfig{
-						Hosts: []*hostConfig{
+					Proxy: config.ProxyConfig{
+						Hosts: []*config.HostConfig{
 							{
 								Host:     "example.com",
 								Endpoint: mockMCP.URL,
 							},
 						},
 					},
-					Server: serverConfig{
+					Server: config.ServerConfig{
 						Addr: "localhost:8080",
 					},
 				}
@@ -891,15 +858,15 @@ func TestAuthorize(t *testing.T) {
 		},
 		{
 			name:                   "scope validation filters unsupported scopes",
-			queryParams:            fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state&scope=read%%20invalid%%20write&skip_scope_selection=true", authorizationServerCodeChallengeMethod),
+			queryParams:            fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state&scope=read%%20invalid%%20write&skip_scope_selection=true", constants.AuthorizationServerCodeChallengeMethod),
 			expectedStatus:         http.StatusSeeOther,
 			expectRedirect:         true,
 			expectScopeTransaction: true,
 			expectValidatedScopes:  true,
 			expectedFilteredScopes: []string{"read", "write"},
-			config: func() *config {
+			config: func() *config.Config {
 				// Create mock MCP server with scopes
-				mockMCP := createMockMCPServer([]scopeConfig{
+				mockMCP := createMockMCPServer([]config.ScopeConfig{
 					{
 						Name:        "read",
 						Description: "Read access to resources",
@@ -911,20 +878,20 @@ func TestAuthorize(t *testing.T) {
 						Tools:       []string{"read"},
 					},
 				})
-				return &config{
-					Provider: providerConfig{
+				return &config.Config{
+					Provider: config.ProviderConfig{
 						ClientID:     "test-client-id",
 						ClientSecret: "test-client-secret",
 					},
-					Proxy: proxyConfig{
-						Hosts: []*hostConfig{
+					Proxy: config.ProxyConfig{
+						Hosts: []*config.HostConfig{
 							{
 								Host:     "example.com",
 								Endpoint: mockMCP.URL,
 							},
 						},
 					},
-					Server: serverConfig{
+					Server: config.ServerConfig{
 						Addr: "localhost:8080",
 					},
 				}
@@ -932,13 +899,13 @@ func TestAuthorize(t *testing.T) {
 		},
 		{
 			name:                     "consent screen disabled with DisableConsentScreen",
-			queryParams:              fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
+			queryParams:              fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", constants.AuthorizationServerCodeChallengeMethod),
 			expectedStatus:           http.StatusSeeOther,
 			expectRedirect:           true,
 			expectScopeSelectionPage: false,
-			config: func() *config {
+			config: func() *config.Config {
 				// Create mock MCP server with scopes
-				mockMCP := createMockMCPServer([]scopeConfig{
+				mockMCP := createMockMCPServer([]config.ScopeConfig{
 					{
 						Name:        "read",
 						Description: "Read access to resources",
@@ -950,13 +917,13 @@ func TestAuthorize(t *testing.T) {
 						Tools:       []string{"read"},
 					},
 				})
-				return &config{
-					Provider: providerConfig{
+				return &config.Config{
+					Provider: config.ProviderConfig{
 						ClientID:     "test-client-id",
 						ClientSecret: "test-client-secret",
 					},
-					Proxy: proxyConfig{
-						Hosts: []*hostConfig{
+					Proxy: config.ProxyConfig{
+						Hosts: []*config.HostConfig{
 							{
 								Host:     "example.com",
 								Endpoint: mockMCP.URL,
@@ -964,7 +931,7 @@ func TestAuthorize(t *testing.T) {
 						},
 						DisableConsentScreen: true,
 					},
-					Server: serverConfig{
+					Server: config.ServerConfig{
 						Addr: "localhost:8080",
 					},
 				}

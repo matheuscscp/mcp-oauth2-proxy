@@ -1,26 +1,29 @@
-package main
+package config
 
 import (
 	"context"
+	"net/http/httptest"
 	"regexp"
 	"testing"
 	"time"
 
+	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
 	. "github.com/onsi/gomega"
 )
 
-func TestConfig_validateAndInitialize(t *testing.T) {
+func TestConfig_ValidateAndInitialize(t *testing.T) {
 	tests := []struct {
 		name           string
-		config         config
+		config         Config
 		wantErr        bool
 		expectedErrMsg string
-		expectedConfig config
+		expectedConfig Config
 	}{
 		{
 			name: "empty provider name",
-			config: config{
-				Provider: providerConfig{
+			config: Config{
+				Provider: ProviderConfig{
 					ClientID:     "test-client-id",
 					ClientSecret: "test-client-secret",
 				},
@@ -30,69 +33,69 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 		},
 		{
 			name: "valid config with all fields",
-			config: config{
-				Provider: providerConfig{
+			config: Config{
+				Provider: ProviderConfig{
 					Name:                "google",
 					ClientID:            "test-client-id",
 					ClientSecret:        "test-client-secret",
 					AllowedEmailDomains: []string{"example\\.com", "test\\.org"},
 				},
-				Proxy: proxyConfig{
+				Proxy: ProxyConfig{
 					AllowedRedirectURLs: []string{"https://example\\.com/.*", "https://test\\.org/.*"},
 					CORS:                true,
 				},
-				Server: serverConfig{
+				Server: ServerConfig{
 					Addr: ":9090",
 				},
 			},
 			wantErr: false,
-			expectedConfig: config{
-				Provider: providerConfig{
+			expectedConfig: Config{
+				Provider: ProviderConfig{
 					Name:                "google",
 					ClientID:            "test-client-id",
 					ClientSecret:        "test-client-secret",
 					AllowedEmailDomains: []string{"example\\.com", "test\\.org"},
 				},
-				Proxy: proxyConfig{
+				Proxy: ProxyConfig{
 					AllowedRedirectURLs: []string{"https://example\\.com/.*", "https://test\\.org/.*"},
-					Hosts:               []*hostConfig{},
+					Hosts:               []*HostConfig{},
 					CORS:                true,
 				},
-				Server: serverConfig{
+				Server: ServerConfig{
 					Addr: ":9090",
 				},
 			},
 		},
 		{
 			name: "config with defaults applied",
-			config: config{
-				Provider: providerConfig{
+			config: Config{
+				Provider: ProviderConfig{
 					Name:         "test-provider",
 					ClientID:     "test-client-id",
 					ClientSecret: "test-client-secret",
 				},
 			},
 			wantErr: false,
-			expectedConfig: config{
-				Provider: providerConfig{
+			expectedConfig: Config{
+				Provider: ProviderConfig{
 					Name:                "test-provider",
 					ClientID:            "test-client-id",
 					ClientSecret:        "test-client-secret",
 					AllowedEmailDomains: []string{},
 				},
-				Proxy: proxyConfig{
+				Proxy: ProxyConfig{
 					AllowedRedirectURLs: []string{},
-					Hosts:               []*hostConfig{},
+					Hosts:               []*HostConfig{},
 				},
-				Server: serverConfig{
+				Server: ServerConfig{
 					Addr: ":8080",
 				},
 			},
 		},
 		{
 			name: "missing client ID",
-			config: config{
-				Provider: providerConfig{
+			config: Config{
+				Provider: ProviderConfig{
 					Name:         "test-provider",
 					ClientSecret: "test-client-secret",
 				},
@@ -102,8 +105,8 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 		},
 		{
 			name: "missing client secret",
-			config: config{
-				Provider: providerConfig{
+			config: Config{
+				Provider: ProviderConfig{
 					Name:     "test-provider",
 					ClientID: "test-client-id",
 				},
@@ -113,8 +116,8 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 		},
 		{
 			name: "invalid regex in allowed email domains",
-			config: config{
-				Provider: providerConfig{
+			config: Config{
+				Provider: ProviderConfig{
 					Name:                "test-provider",
 					ClientID:            "test-client-id",
 					ClientSecret:        "test-client-secret",
@@ -126,13 +129,13 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 		},
 		{
 			name: "invalid regex in allowed redirect URLs",
-			config: config{
-				Provider: providerConfig{
+			config: Config{
+				Provider: ProviderConfig{
 					Name:         "test-provider",
 					ClientID:     "test-client-id",
 					ClientSecret: "test-client-secret",
 				},
-				Proxy: proxyConfig{
+				Proxy: ProxyConfig{
 					AllowedRedirectURLs: []string{"[invalid-regex"},
 				},
 			},
@@ -141,43 +144,43 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 		},
 		{
 			name: "config with nil hosts - initializes empty slice",
-			config: config{
-				Provider: providerConfig{
+			config: Config{
+				Provider: ProviderConfig{
 					Name:         "test-provider",
 					ClientID:     "test-client-id",
 					ClientSecret: "test-client-secret",
 				},
-				Proxy: proxyConfig{
+				Proxy: ProxyConfig{
 					Hosts: nil,
 				},
 			},
 			wantErr: false,
-			expectedConfig: config{
-				Provider: providerConfig{
+			expectedConfig: Config{
+				Provider: ProviderConfig{
 					Name:                "test-provider",
 					ClientID:            "test-client-id",
 					ClientSecret:        "test-client-secret",
 					AllowedEmailDomains: []string{},
 				},
-				Proxy: proxyConfig{
+				Proxy: ProxyConfig{
 					AllowedRedirectURLs: []string{},
-					Hosts:               []*hostConfig{},
+					Hosts:               []*HostConfig{},
 				},
-				Server: serverConfig{
+				Server: ServerConfig{
 					Addr: ":8080",
 				},
 			},
 		},
 		{
 			name: "config with hosts having valid endpoints",
-			config: config{
-				Provider: providerConfig{
+			config: Config{
+				Provider: ProviderConfig{
 					Name:         "test-provider",
 					ClientID:     "test-client-id",
 					ClientSecret: "test-client-secret",
 				},
-				Proxy: proxyConfig{
-					Hosts: []*hostConfig{
+				Proxy: ProxyConfig{
+					Hosts: []*HostConfig{
 						{
 							Host:     "example.com",
 							Endpoint: "http://localhost:8080",
@@ -190,16 +193,16 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 				},
 			},
 			wantErr: false,
-			expectedConfig: config{
-				Provider: providerConfig{
+			expectedConfig: Config{
+				Provider: ProviderConfig{
 					Name:                "test-provider",
 					ClientID:            "test-client-id",
 					ClientSecret:        "test-client-secret",
 					AllowedEmailDomains: []string{},
 				},
-				Proxy: proxyConfig{
+				Proxy: ProxyConfig{
 					AllowedRedirectURLs: []string{},
-					Hosts: []*hostConfig{
+					Hosts: []*HostConfig{
 						{
 							Host:     "example.com",
 							Endpoint: "http://localhost:8080",
@@ -210,21 +213,21 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 						},
 					},
 				},
-				Server: serverConfig{
+				Server: ServerConfig{
 					Addr: ":8080",
 				},
 			},
 		},
 		{
 			name: "config with hosts missing endpoint - should be valid now",
-			config: config{
-				Provider: providerConfig{
+			config: Config{
+				Provider: ProviderConfig{
 					Name:         "test-provider",
 					ClientID:     "test-client-id",
 					ClientSecret: "test-client-secret",
 				},
-				Proxy: proxyConfig{
-					Hosts: []*hostConfig{
+				Proxy: ProxyConfig{
+					Hosts: []*HostConfig{
 						{
 							Host:     "example.com",
 							Endpoint: "", // Missing endpoint is now valid
@@ -233,37 +236,37 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 				},
 			},
 			wantErr: false,
-			expectedConfig: config{
-				Provider: providerConfig{
+			expectedConfig: Config{
+				Provider: ProviderConfig{
 					Name:                "test-provider",
 					ClientID:            "test-client-id",
 					ClientSecret:        "test-client-secret",
 					AllowedEmailDomains: []string{},
 				},
-				Proxy: proxyConfig{
+				Proxy: ProxyConfig{
 					AllowedRedirectURLs: []string{},
-					Hosts: []*hostConfig{
+					Hosts: []*HostConfig{
 						{
 							Host:     "example.com",
 							Endpoint: "",
 						},
 					},
 				},
-				Server: serverConfig{
+				Server: ServerConfig{
 					Addr: ":8080",
 				},
 			},
 		},
 		{
 			name: "config with hosts missing host - validation error",
-			config: config{
-				Provider: providerConfig{
+			config: Config{
+				Provider: ProviderConfig{
 					Name:         "test-provider",
 					ClientID:     "test-client-id",
 					ClientSecret: "test-client-secret",
 				},
-				Proxy: proxyConfig{
-					Hosts: []*hostConfig{
+				Proxy: ProxyConfig{
+					Hosts: []*HostConfig{
 						{
 							Host:     "", // Missing host
 							Endpoint: "http://example.com",
@@ -280,7 +283,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			err := tt.config.validateAndInitialize()
+			err := tt.config.ValidateAndInitialize()
 
 			if tt.wantErr {
 				g.Expect(err).To(HaveOccurred())
@@ -311,16 +314,16 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 	}
 }
 
-func TestProviderConfig_validateEmailDomain(t *testing.T) {
+func TestProviderConfig_ValidateEmailDomain(t *testing.T) {
 	tests := []struct {
 		name     string
-		provider providerConfig
+		provider ProviderConfig
 		email    string
 		expected bool
 	}{
 		{
 			name: "no allowed domains - should allow all",
-			provider: providerConfig{
+			provider: ProviderConfig{
 				regexAllowedEmailDomains: []*regexp.Regexp{},
 			},
 			email:    "test@example.com",
@@ -328,7 +331,7 @@ func TestProviderConfig_validateEmailDomain(t *testing.T) {
 		},
 		{
 			name: "valid email with matching domain",
-			provider: providerConfig{
+			provider: ProviderConfig{
 				regexAllowedEmailDomains: []*regexp.Regexp{
 					regexp.MustCompile(`example\.com`),
 					regexp.MustCompile(`test\.org`),
@@ -339,7 +342,7 @@ func TestProviderConfig_validateEmailDomain(t *testing.T) {
 		},
 		{
 			name: "valid email with non-matching domain",
-			provider: providerConfig{
+			provider: ProviderConfig{
 				regexAllowedEmailDomains: []*regexp.Regexp{
 					regexp.MustCompile(`example\.com`),
 					regexp.MustCompile(`test\.org`),
@@ -350,7 +353,7 @@ func TestProviderConfig_validateEmailDomain(t *testing.T) {
 		},
 		{
 			name: "invalid email format - no @",
-			provider: providerConfig{
+			provider: ProviderConfig{
 				regexAllowedEmailDomains: []*regexp.Regexp{
 					regexp.MustCompile(`example\.com`),
 				},
@@ -360,7 +363,7 @@ func TestProviderConfig_validateEmailDomain(t *testing.T) {
 		},
 		{
 			name: "invalid email format - multiple @",
-			provider: providerConfig{
+			provider: ProviderConfig{
 				regexAllowedEmailDomains: []*regexp.Regexp{
 					regexp.MustCompile(`example\.com`),
 				},
@@ -370,7 +373,7 @@ func TestProviderConfig_validateEmailDomain(t *testing.T) {
 		},
 		{
 			name: "regex pattern matching subdomain",
-			provider: providerConfig{
+			provider: ProviderConfig{
 				regexAllowedEmailDomains: []*regexp.Regexp{
 					regexp.MustCompile(`.*\.example\.com`),
 				},
@@ -380,7 +383,7 @@ func TestProviderConfig_validateEmailDomain(t *testing.T) {
 		},
 		{
 			name: "regex pattern not matching subdomain",
-			provider: providerConfig{
+			provider: ProviderConfig{
 				regexAllowedEmailDomains: []*regexp.Regexp{
 					regexp.MustCompile(`^example\.com$`),
 				},
@@ -390,7 +393,7 @@ func TestProviderConfig_validateEmailDomain(t *testing.T) {
 		},
 		{
 			name: "multiple patterns - first matches",
-			provider: providerConfig{
+			provider: ProviderConfig{
 				regexAllowedEmailDomains: []*regexp.Regexp{
 					regexp.MustCompile(`example\.com`),
 					regexp.MustCompile(`test\.org`),
@@ -401,7 +404,7 @@ func TestProviderConfig_validateEmailDomain(t *testing.T) {
 		},
 		{
 			name: "multiple patterns - second matches",
-			provider: providerConfig{
+			provider: ProviderConfig{
 				regexAllowedEmailDomains: []*regexp.Regexp{
 					regexp.MustCompile(`example\.com`),
 					regexp.MustCompile(`test\.org`),
@@ -415,23 +418,23 @@ func TestProviderConfig_validateEmailDomain(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			result := tt.provider.validateEmailDomain(tt.email)
+			result := tt.provider.ValidateEmailDomain(tt.email)
 			g.Expect(result).To(Equal(tt.expected))
 		})
 	}
 }
 
-func TestProxyConfig_acceptsHost(t *testing.T) {
+func TestProxyConfig_AcceptsHost(t *testing.T) {
 	tests := []struct {
 		name           string
-		proxyConfig    proxyConfig
+		proxyConfig    ProxyConfig
 		host           string
 		expectedResult bool
 	}{
 		{
 			name: "host in list",
-			proxyConfig: proxyConfig{
-				Hosts: []*hostConfig{
+			proxyConfig: ProxyConfig{
+				Hosts: []*HostConfig{
 					{Host: "example.com"},
 					{Host: "test.com"},
 				},
@@ -441,8 +444,8 @@ func TestProxyConfig_acceptsHost(t *testing.T) {
 		},
 		{
 			name: "host not in list",
-			proxyConfig: proxyConfig{
-				Hosts: []*hostConfig{
+			proxyConfig: ProxyConfig{
+				Hosts: []*HostConfig{
 					{Host: "example.com"},
 					{Host: "test.com"},
 				},
@@ -452,14 +455,14 @@ func TestProxyConfig_acceptsHost(t *testing.T) {
 		},
 		{
 			name:           "empty hosts list",
-			proxyConfig:    proxyConfig{},
+			proxyConfig:    ProxyConfig{},
 			host:           "example.com",
 			expectedResult: false,
 		},
 		{
 			name: "empty host string",
-			proxyConfig: proxyConfig{
-				Hosts: []*hostConfig{
+			proxyConfig: ProxyConfig{
+				Hosts: []*HostConfig{
 					{Host: "example.com"},
 				},
 			},
@@ -471,22 +474,22 @@ func TestProxyConfig_acceptsHost(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			result := tt.proxyConfig.acceptsHost(tt.host)
+			result := tt.proxyConfig.AcceptsHost(tt.host)
 			g.Expect(result).To(Equal(tt.expectedResult))
 		})
 	}
 }
 
-func TestProxyConfig_validateRedirectURL(t *testing.T) {
+func TestProxyConfig_ValidateRedirectURL(t *testing.T) {
 	tests := []struct {
 		name     string
-		proxy    proxyConfig
+		proxy    ProxyConfig
 		url      string
 		expected bool
 	}{
 		{
 			name: "empty URL",
-			proxy: proxyConfig{
+			proxy: ProxyConfig{
 				regexAllowedRedirectURLs: []*regexp.Regexp{},
 			},
 			url:      "",
@@ -494,7 +497,7 @@ func TestProxyConfig_validateRedirectURL(t *testing.T) {
 		},
 		{
 			name: "no allowed URLs - should allow all non-empty",
-			proxy: proxyConfig{
+			proxy: ProxyConfig{
 				regexAllowedRedirectURLs: []*regexp.Regexp{},
 			},
 			url:      "https://example.com/callback",
@@ -502,7 +505,7 @@ func TestProxyConfig_validateRedirectURL(t *testing.T) {
 		},
 		{
 			name: "valid URL with matching pattern",
-			proxy: proxyConfig{
+			proxy: ProxyConfig{
 				regexAllowedRedirectURLs: []*regexp.Regexp{
 					regexp.MustCompile(`https://example\.com/.*`),
 					regexp.MustCompile(`https://test\.org/.*`),
@@ -513,7 +516,7 @@ func TestProxyConfig_validateRedirectURL(t *testing.T) {
 		},
 		{
 			name: "valid URL with non-matching pattern",
-			proxy: proxyConfig{
+			proxy: ProxyConfig{
 				regexAllowedRedirectURLs: []*regexp.Regexp{
 					regexp.MustCompile(`https://example\.com/.*`),
 					regexp.MustCompile(`https://test\.org/.*`),
@@ -524,7 +527,7 @@ func TestProxyConfig_validateRedirectURL(t *testing.T) {
 		},
 		{
 			name: "partial match with regex",
-			proxy: proxyConfig{
+			proxy: ProxyConfig{
 				regexAllowedRedirectURLs: []*regexp.Regexp{
 					regexp.MustCompile(`example\.com`),
 				},
@@ -534,7 +537,7 @@ func TestProxyConfig_validateRedirectURL(t *testing.T) {
 		},
 		{
 			name: "exact pattern match",
-			proxy: proxyConfig{
+			proxy: ProxyConfig{
 				regexAllowedRedirectURLs: []*regexp.Regexp{
 					regexp.MustCompile(`^https://example\.com/callback$`),
 				},
@@ -544,7 +547,7 @@ func TestProxyConfig_validateRedirectURL(t *testing.T) {
 		},
 		{
 			name: "exact pattern no match",
-			proxy: proxyConfig{
+			proxy: ProxyConfig{
 				regexAllowedRedirectURLs: []*regexp.Regexp{
 					regexp.MustCompile(`^https://example\.com/callback$`),
 				},
@@ -554,7 +557,7 @@ func TestProxyConfig_validateRedirectURL(t *testing.T) {
 		},
 		{
 			name: "multiple patterns - first matches",
-			proxy: proxyConfig{
+			proxy: ProxyConfig{
 				regexAllowedRedirectURLs: []*regexp.Regexp{
 					regexp.MustCompile(`https://example\.com/.*`),
 					regexp.MustCompile(`https://test\.org/.*`),
@@ -565,7 +568,7 @@ func TestProxyConfig_validateRedirectURL(t *testing.T) {
 		},
 		{
 			name: "multiple patterns - second matches",
-			proxy: proxyConfig{
+			proxy: ProxyConfig{
 				regexAllowedRedirectURLs: []*regexp.Regexp{
 					regexp.MustCompile(`https://example\.com/.*`),
 					regexp.MustCompile(`https://test\.org/.*`),
@@ -579,35 +582,35 @@ func TestProxyConfig_validateRedirectURL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			result := tt.proxy.validateRedirectURL(tt.url)
+			result := tt.proxy.ValidateRedirectURL(tt.url)
 			g.Expect(result).To(Equal(tt.expected))
 		})
 	}
 }
 
-func TestProxyConfig_supportedScopes(t *testing.T) {
+func TestProxyConfig_SupportedScopes(t *testing.T) {
 	// Since supportedScopes now fetches from an MCP endpoint,
 	// we'll test just the basic logic with mock data
 	tests := []struct {
 		name           string
-		proxy          proxyConfig
+		proxy          ProxyConfig
 		host           string
 		expected       []string
-		expectedConfig []scopeConfig
+		expectedConfig []ScopeConfig
 		expectError    bool
 	}{
 		{
 			name: "no hosts configured - returns default scope",
-			proxy: proxyConfig{
-				Hosts: []*hostConfig{},
+			proxy: ProxyConfig{
+				Hosts: []*HostConfig{},
 			},
 			host:     "example.com",
 			expected: []string{"mcp-oauth2-proxy"},
 		},
 		{
 			name: "host not found - returns default scope",
-			proxy: proxyConfig{
-				Hosts: []*hostConfig{
+			proxy: ProxyConfig{
+				Hosts: []*HostConfig{
 					{
 						Host:     "other.com",
 						Endpoint: "http://localhost:8080",
@@ -619,8 +622,8 @@ func TestProxyConfig_supportedScopes(t *testing.T) {
 		},
 		{
 			name: "host found but endpoint is empty - returns default scope",
-			proxy: proxyConfig{
-				Hosts: []*hostConfig{
+			proxy: ProxyConfig{
+				Hosts: []*HostConfig{
 					{
 						Host:     "example.com",
 						Endpoint: "", // Empty endpoint should not fetch scopes
@@ -632,13 +635,13 @@ func TestProxyConfig_supportedScopes(t *testing.T) {
 		},
 		{
 			name: "host found but MCP returns empty scopes - returns default scope",
-			proxy: proxyConfig{
-				Hosts: []*hostConfig{
+			proxy: ProxyConfig{
+				Hosts: []*HostConfig{
 					{
 						Host: "example.com",
 						Endpoint: func() string {
 							// Create mock MCP server that returns empty scopes
-							mockMCP := createMockMCPServer([]scopeConfig{})
+							mockMCP := createMockMCPServer([]ScopeConfig{})
 							return mockMCP.URL
 						}(),
 					},
@@ -648,9 +651,36 @@ func TestProxyConfig_supportedScopes(t *testing.T) {
 			expected: []string{"mcp-oauth2-proxy"},
 		},
 		{
+			name: "host found with valid endpoint and scopes - returns extracted scope names",
+			proxy: ProxyConfig{
+				Hosts: []*HostConfig{
+					{
+						Host: "example.com",
+						Endpoint: func() string {
+							// Create mock MCP server that returns multiple scopes
+							mockScopes := []ScopeConfig{
+								{Name: "scope1", Description: "First scope", Tools: []string{"tool1"}},
+								{Name: "scope2", Description: "Second scope", Tools: []string{"tool2", "tool3"}},
+								{Name: "scope3", Description: "Third scope", Tools: []string{}},
+							}
+							mockMCP := createMockMCPServer(mockScopes)
+							return mockMCP.URL
+						}(),
+					},
+				},
+			},
+			host:     "example.com",
+			expected: []string{"scope1", "scope2", "scope3"},
+			expectedConfig: []ScopeConfig{
+				{Name: "scope1", Description: "First scope", Tools: []string{"tool1"}},
+				{Name: "scope2", Description: "Second scope", Tools: []string{"tool2", "tool3"}},
+				{Name: "scope3", Description: "Third scope", Tools: []string{}},
+			},
+		},
+		{
 			name: "host found but invalid MCP endpoint URL - returns error",
-			proxy: proxyConfig{
-				Hosts: []*hostConfig{
+			proxy: ProxyConfig{
+				Hosts: []*HostConfig{
 					{
 						Host:     "example.com",
 						Endpoint: "http://invalid\x00url\x01with\x02control\x03characters",
@@ -662,8 +692,8 @@ func TestProxyConfig_supportedScopes(t *testing.T) {
 		},
 		{
 			name: "host found but MCP returns invalid JSON metadata - returns error",
-			proxy: proxyConfig{
-				Hosts: []*hostConfig{
+			proxy: ProxyConfig{
+				Hosts: []*HostConfig{
 					{
 						Host: "example.com",
 						Endpoint: func() string {
@@ -684,7 +714,7 @@ func TestProxyConfig_supportedScopes(t *testing.T) {
 			g := NewWithT(t)
 			// Use a context for the new signature
 			ctx := context.Background()
-			result, resultConfig, err := tt.proxy.supportedScopes(ctx, tt.host)
+			result, resultConfig, err := tt.proxy.SupportedScopes(ctx, tt.host)
 			if tt.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -699,7 +729,7 @@ func TestProxyConfig_supportedScopes(t *testing.T) {
 func TestHostConfig_getSupportedScopes(t *testing.T) {
 	g := NewWithT(t)
 
-	mockScopes := []scopeConfig{
+	mockScopes := []ScopeConfig{
 		{
 			Name:        "test-scope",
 			Description: "Test scope description",
@@ -709,8 +739,8 @@ func TestHostConfig_getSupportedScopes(t *testing.T) {
 	mockServer := createMockMCPServer(mockScopes)
 	defer mockServer.Close()
 
-	proxy := &proxyConfig{}
-	host := &hostConfig{
+	proxy := &ProxyConfig{}
+	host := &HostConfig{
 		Host:     "example.com",
 		Endpoint: mockServer.URL,
 	}
@@ -736,4 +766,51 @@ func TestHostConfig_getSupportedScopes(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(freshScopes).To(Equal(mockScopes))
 	g.Expect(host.scopesDeadline.After(newNow)).To(BeTrue())
+}
+
+// createMockMCPServer creates a test MCP server with scopes metadata
+func createMockMCPServer(scopes []ScopeConfig) *httptest.Server {
+	mcpServer := server.NewMCPServer("test-mcp-server", "1.0.0",
+		server.WithToolCapabilities(true),
+		server.WithHooks(&server.Hooks{
+			OnAfterListTools: []server.OnAfterListToolsFunc{
+				func(ctx context.Context, id any, message *mcp.ListToolsRequest, result *mcp.ListToolsResult) {
+					// Add scopes to the metadata
+					if result.Meta == nil {
+						result.Meta = &mcp.Meta{
+							AdditionalFields: make(map[string]interface{}),
+						}
+					}
+					result.Meta.AdditionalFields["scopes"] = scopes
+				},
+			},
+		}),
+	)
+
+	// Create and return the test server
+	return server.NewTestStreamableHTTPServer(mcpServer)
+}
+
+// createMockMCPServerWithBogusJSON creates a test MCP server that returns invalid JSON in metadata
+func createMockMCPServerWithBogusJSON() *httptest.Server {
+	mcpServer := server.NewMCPServer("test-mcp-server", "1.0.0",
+		server.WithToolCapabilities(true),
+		server.WithHooks(&server.Hooks{
+			OnAfterListTools: []server.OnAfterListToolsFunc{
+				func(ctx context.Context, id any, message *mcp.ListToolsRequest, result *mcp.ListToolsResult) {
+					// Add invalid data that will cause JSON unmarshaling to fail
+					if result.Meta == nil {
+						result.Meta = &mcp.Meta{
+							AdditionalFields: make(map[string]interface{}),
+						}
+					}
+					// Create a struct that will marshal to JSON but unmarshal incorrectly
+					result.Meta.AdditionalFields["scopes"] = "this is not a valid scope array"
+				},
+			},
+		}),
+	)
+
+	// Create and return the test server
+	return server.NewTestStreamableHTTPServer(mcpServer)
 }

@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"context"
@@ -13,21 +13,24 @@ import (
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	"gopkg.in/yaml.v3"
+
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/constants"
 )
 
 const (
+	MaxGroups = 100
+
 	defaultServerAddr   = ":8080"
 	scopesCacheDuration = 10 * time.Second
-	maxGroups           = 100
 )
 
-type config struct {
-	Provider providerConfig `yaml:"provider" json:"provider"`
-	Proxy    proxyConfig    `yaml:"proxy" json:"proxy"`
-	Server   serverConfig   `yaml:"server" json:"server"`
+type Config struct {
+	Provider ProviderConfig `yaml:"provider" json:"provider"`
+	Proxy    ProxyConfig    `yaml:"proxy" json:"proxy"`
+	Server   ServerConfig   `yaml:"server" json:"server"`
 }
 
-type providerConfig struct {
+type ProviderConfig struct {
 	Name                string   `yaml:"name" json:"name"`
 	ClientID            string   `yaml:"clientID" json:"clientID"`
 	ClientSecret        string   `yaml:"clientSecret" json:"clientSecret"`
@@ -37,8 +40,8 @@ type providerConfig struct {
 	regexAllowedEmailDomains []*regexp.Regexp
 }
 
-type proxyConfig struct {
-	Hosts                []*hostConfig `yaml:"hosts" json:"hosts"`
+type ProxyConfig struct {
+	Hosts                []*HostConfig `yaml:"hosts" json:"hosts"`
 	DisableConsentScreen bool          `yaml:"disableConsentScreen" json:"disableConsentScreen"`
 	AllowedRedirectURLs  []string      `yaml:"allowedRedirectURLs" json:"allowedRedirectURLs"`
 	CORS                 bool          `yaml:"cors" json:"cors"`
@@ -46,31 +49,31 @@ type proxyConfig struct {
 	regexAllowedRedirectURLs []*regexp.Regexp
 }
 
-type hostConfig struct {
+type HostConfig struct {
 	Host     string `yaml:"host" json:"host"`
 	Endpoint string `yaml:"endpoint" json:"endpoint"`
 
-	scopes         []scopeConfig
+	scopes         []ScopeConfig
 	scopesDeadline time.Time
 	scopesMu       sync.Mutex
 }
 
-type scopeConfig struct {
+type ScopeConfig struct {
 	Name        string   `yaml:"name" json:"name"`
 	Description string   `yaml:"description" json:"description"`
 	Tools       []string `yaml:"tools" json:"tools"`
 }
 
-type serverConfig struct {
+type ServerConfig struct {
 	Addr string `yaml:"addr" json:"addr"`
 }
 
-func newConfig() (*config, error) {
+func Load() (*Config, error) {
 	fileName := "/etc/mcp-oauth2-proxy/config/config.yaml"
 	if fn := os.Getenv("MCP_OAUTH2_PROXY_CONFIG"); fn != "" {
 		fileName = fn
 	}
-	var cfg config
+	var cfg Config
 	f, err := os.Open(fileName)
 	if err != nil {
 		return nil, err
@@ -79,19 +82,19 @@ func newConfig() (*config, error) {
 	if err := yaml.NewDecoder(f).Decode(&cfg); err != nil {
 		return nil, err
 	}
-	if err := cfg.validateAndInitialize(); err != nil {
+	if err := cfg.ValidateAndInitialize(); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
 }
 
-func (c *config) validateAndInitialize() error {
+func (c *Config) ValidateAndInitialize() error {
 	// Apply defaults.
 	if c.Provider.AllowedEmailDomains == nil {
 		c.Provider.AllowedEmailDomains = []string{}
 	}
 	if c.Proxy.Hosts == nil {
-		c.Proxy.Hosts = []*hostConfig{}
+		c.Proxy.Hosts = []*HostConfig{}
 	}
 	if c.Proxy.AllowedRedirectURLs == nil {
 		c.Proxy.AllowedRedirectURLs = []string{}
@@ -137,7 +140,7 @@ func (c *config) validateAndInitialize() error {
 	return nil
 }
 
-func getEmailDomain(email string) string {
+func GetEmailDomain(email string) string {
 	s := strings.Split(email, "@")
 	if len(s) == 2 {
 		return s[1]
@@ -145,8 +148,8 @@ func getEmailDomain(email string) string {
 	return ""
 }
 
-func (p *providerConfig) validateEmailDomain(email string) bool {
-	domain := getEmailDomain(email)
+func (p *ProviderConfig) ValidateEmailDomain(email string) bool {
+	domain := GetEmailDomain(email)
 	if domain == "" {
 		return false
 	}
@@ -161,7 +164,7 @@ func (p *providerConfig) validateEmailDomain(email string) bool {
 	return false
 }
 
-func (p *proxyConfig) acceptsHost(host string) bool {
+func (p *ProxyConfig) AcceptsHost(host string) bool {
 	for _, h := range p.Hosts {
 		if h.Host == host {
 			return true
@@ -170,7 +173,7 @@ func (p *proxyConfig) acceptsHost(host string) bool {
 	return false
 }
 
-func (p *proxyConfig) validateRedirectURL(url string) bool {
+func (p *ProxyConfig) ValidateRedirectURL(url string) bool {
 	if url == "" {
 		return false
 	}
@@ -185,7 +188,7 @@ func (p *proxyConfig) validateRedirectURL(url string) bool {
 	return false
 }
 
-func (p *proxyConfig) supportedScopes(ctx context.Context, host string) ([]string, []scopeConfig, error) {
+func (p *ProxyConfig) SupportedScopes(ctx context.Context, host string) ([]string, []ScopeConfig, error) {
 	now := time.Now()
 	for _, h := range p.Hosts {
 		if h.Host != host {
@@ -196,7 +199,7 @@ func (p *proxyConfig) supportedScopes(ctx context.Context, host string) ([]strin
 			return nil, nil, err
 		}
 		if len(scopes) == 0 {
-			return []string{authorizationServerDefaultScope}, nil, nil
+			return []string{constants.AuthorizationServerDefaultScope}, nil, nil
 		}
 		scopeNames := make([]string, 0, len(scopes))
 		for _, s := range scopes {
@@ -204,10 +207,10 @@ func (p *proxyConfig) supportedScopes(ctx context.Context, host string) ([]strin
 		}
 		return scopeNames, scopes, nil
 	}
-	return []string{authorizationServerDefaultScope}, nil, nil
+	return []string{constants.AuthorizationServerDefaultScope}, nil, nil
 }
 
-func (p *proxyConfig) getSupportedScopes(ctx context.Context, h *hostConfig, now time.Time) ([]scopeConfig, error) {
+func (p *ProxyConfig) getSupportedScopes(ctx context.Context, h *HostConfig, now time.Time) ([]ScopeConfig, error) {
 	ep := h.Endpoint
 	if ep == "" {
 		return nil, nil
@@ -230,7 +233,7 @@ func (p *proxyConfig) getSupportedScopes(ctx context.Context, h *hostConfig, now
 	return scopes, nil
 }
 
-func (p *proxyConfig) fetchSupportedScopes(ctx context.Context, endpoint string) ([]scopeConfig, error) {
+func (p *ProxyConfig) fetchSupportedScopes(ctx context.Context, endpoint string) ([]ScopeConfig, error) {
 	c, err := client.NewStreamableHttpClient(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create MCP client: %w", err)
@@ -249,7 +252,7 @@ func (p *proxyConfig) fetchSupportedScopes(ctx context.Context, endpoint string)
 		return nil, fmt.Errorf("failed to marshal MCP tools: %w", err)
 	}
 	var payload struct {
-		Scopes []scopeConfig `json:"scopes"`
+		Scopes []ScopeConfig `json:"scopes"`
 	}
 	if err := json.Unmarshal(b, &payload); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal MCP tools: %w", err)
