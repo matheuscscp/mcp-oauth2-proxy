@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 )
 
 //go:embed scopes.html
 var scopeSelectionPage string
 
-func respondScopeSelectionPage(w http.ResponseWriter, r *http.Request, scopes []scopeConfig) {
+func respondScopeSelectionPage(w http.ResponseWriter, r *http.Request, scopes []config.ScopeConfig) {
 	// Prepare scopes for webpage.
 	type scopeConfigForWebpage struct {
 		Name        string   `json:"name"`

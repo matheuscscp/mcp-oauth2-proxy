@@ -7,6 +7,9 @@ import (
 	"strings"
 
 	"golang.org/x/oauth2"
+
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/constants"
 )
 
 func baseURL(r *http.Request) string {
@@ -22,18 +25,18 @@ func jwksURL(r *http.Request) string {
 }
 
 func authorizationCode(r *http.Request) string {
-	return r.URL.Query().Get(queryParamAuthorizationCode)
+	return r.URL.Query().Get(constants.QueryParamAuthorizationCode)
 }
 
 func state(r *http.Request) string {
-	return r.URL.Query().Get(queryParamState)
+	return r.URL.Query().Get(constants.QueryParamState)
 }
 
 func bearerToken(r *http.Request) string {
 	return strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 }
 
-func oauth2Config(r *http.Request, p provider, conf *config) *oauth2.Config {
+func oauth2Config(r *http.Request, p provider, conf *config.Config) *oauth2.Config {
 	c := p.oauth2Config()
 	c.ClientID = conf.Provider.ClientID
 	c.RedirectURL = callbackURL(r)
@@ -42,7 +45,7 @@ func oauth2Config(r *http.Request, p provider, conf *config) *oauth2.Config {
 
 func respondWWWAuthenticate(w http.ResponseWriter, r *http.Request) {
 	resourceMetadata := fmt.Sprintf("%s%s", baseURL(r), pathOAuthProtectedResource)
-	wwwAuthenticate := fmt.Sprintf(`Bearer realm="%s", resource_metadata="%s"`, mcpOAuth2Proxy, resourceMetadata)
+	wwwAuthenticate := fmt.Sprintf(`Bearer realm="%s", resource_metadata="%s"`, constants.MCPOAuth2Proxy, resourceMetadata)
 	w.Header().Set("WWW-Authenticate", wwwAuthenticate)
 	const status = http.StatusUnauthorized
 	http.Error(w, http.StatusText(status), status)

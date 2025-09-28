@@ -6,50 +6,44 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 )
 
 func TestNewProvider(t *testing.T) {
 	tests := []struct {
 		name         string
-		config       *config
+		config       *config.ProviderConfig
 		expectError  bool
 		expectedType string
 	}{
 		{
 			name: "google provider",
-			config: &config{
-				Provider: providerConfig{
-					Name: "google",
-				},
+			config: &config.ProviderConfig{
+				Name: "google",
 			},
 			expectError:  false,
 			expectedType: "*main.googleProvider",
 		},
 		{
 			name: "github provider",
-			config: &config{
-				Provider: providerConfig{
-					Name: "github",
-				},
+			config: &config.ProviderConfig{
+				Name: "github",
 			},
 			expectError:  false,
 			expectedType: "main.githubProvider",
 		},
 		{
 			name: "unsupported provider",
-			config: &config{
-				Provider: providerConfig{
-					Name: "unsupported",
-				},
+			config: &config.ProviderConfig{
+				Name: "unsupported",
 			},
 			expectError: true,
 		},
 		{
 			name: "empty provider name",
-			config: &config{
-				Provider: providerConfig{
-					Name: "",
-				},
+			config: &config.ProviderConfig{
+				Name: "",
 			},
 			expectError: true,
 		},
@@ -59,7 +53,7 @@ func TestNewProvider(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			provider, err := newProvider(&tt.config.Provider)
+			provider, err := newProvider(tt.config)
 
 			if tt.expectError {
 				g.Expect(err).To(HaveOccurred())

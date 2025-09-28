@@ -6,7 +6,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY ./*.go ./
-RUN rm *_test.go
+COPY ./internal ./internal
 COPY ./scopes.html ./
 
 # CGO_ENABLED=0 to build a statically-linked binary

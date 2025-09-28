@@ -8,9 +8,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
+
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 )
 
-func newServer(conf *config, api http.Handler,
+func newServer(conf *config.Config, api http.Handler,
 	promRegisterer prometheus.Registerer, promGatherer prometheus.Gatherer) *http.Server {
 
 	if conf.Proxy.CORS {

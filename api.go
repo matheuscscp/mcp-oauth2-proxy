@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"golang.org/x/oauth2"
+
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/constants"
 )
 
 const (
@@ -27,7 +30,7 @@ const (
 	pathJWKS                = "/openid/v1/jwks"
 )
 
-func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore, nowFunc func() time.Time) http.Handler {
+func newAPI(ti *tokenIssuer, p provider, conf *config.Config, sessionStore sessionStore, nowFunc func() time.Time) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc(pathAuthenticate, func(w http.ResponseWriter, r *http.Request) {
@@ -53,7 +56,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 	})
 
 	mux.HandleFunc(pathOAuthAuthorizationServer, func(w http.ResponseWriter, r *http.Request) {
-		supportedScopes, _, err := conf.Proxy.supportedScopes(r.Context(), r.Host)
+		supportedScopes, _, err := conf.Proxy.SupportedScopes(r.Context(), r.Host)
 		if err != nil {
 			fromRequest(r).WithError(err).Error("failed to get supported scopes")
 			http.Error(w, "Failed to get supported scopes", http.StatusInternalServerError)
@@ -64,12 +67,12 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 			"authorization_endpoint":                fmt.Sprintf("%s%s", baseURL(r), pathAuthorize),
 			"token_endpoint":                        fmt.Sprintf("%s%s", baseURL(r), pathToken),
 			"registration_endpoint":                 fmt.Sprintf("%s%s", baseURL(r), pathRegister),
-			"code_challenge_methods_supported":      []string{authorizationServerCodeChallengeMethod},
-			"grant_types_supported":                 []string{authorizationServerGrantType},
-			"response_modes_supported":              []string{authorizationServerResponseMode},
-			"response_types_supported":              []string{authorizationServerResponseType},
+			"code_challenge_methods_supported":      []string{constants.AuthorizationServerCodeChallengeMethod},
+			"grant_types_supported":                 []string{constants.AuthorizationServerGrantType},
+			"response_modes_supported":              []string{constants.AuthorizationServerResponseMode},
+			"response_types_supported":              []string{constants.AuthorizationServerResponseType},
 			"scopes_supported":                      supportedScopes,
-			"token_endpoint_auth_methods_supported": []string{authorizationServerTokenEndpointAuthMethod},
+			"token_endpoint_auth_methods_supported": []string{constants.AuthorizationServerTokenEndpointAuthMethod},
 		})
 	})
 
@@ -98,15 +101,15 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 		}
 
 		for _, uri := range req.RedirectURIs {
-			if !conf.Proxy.validateRedirectURL(uri) {
+			if !conf.Proxy.ValidateRedirectURL(uri) {
 				http.Error(w, fmt.Sprintf("Invalid redirect URI '%s'", uri), http.StatusBadRequest)
 				return
 			}
 		}
 
 		resp := map[string]any{
-			"client_id":                  mcpOAuth2Proxy,
-			"token_endpoint_auth_method": authorizationServerTokenEndpointAuthMethod,
+			"client_id":                  constants.MCPOAuth2Proxy,
+			"token_endpoint_auth_method": constants.AuthorizationServerTokenEndpointAuthMethod,
 		}
 		if len(req.RedirectURIs) > 0 {
 			resp["redirect_uris"] = req.RedirectURIs
@@ -120,7 +123,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 		l := fromRequest(r)
 
 		// Fetch supported scopes for the host.
-		supportedScopeNames, supportedScopes, err := conf.Proxy.supportedScopes(r.Context(), r.Host)
+		supportedScopeNames, supportedScopes, err := conf.Proxy.SupportedScopes(r.Context(), r.Host)
 		if err != nil {
 			l.WithError(err).Error("failed to get supported scopes")
 			http.Error(w, "Failed to get supported scopes", http.StatusInternalServerError)
@@ -159,8 +162,8 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 		// Build authorization code URL.
 		oauth2Conf := oauth2Config(r, p, conf)
 		authCodeURL := oauth2Conf.AuthCodeURL(state,
-			oauth2.SetAuthURLParam(queryParamCodeChallenge, codeChallenge),
-			oauth2.SetAuthURLParam(queryParamCodeChallengeMethod, authorizationServerCodeChallengeMethod))
+			oauth2.SetAuthURLParam(constants.QueryParamCodeChallenge, codeChallenge),
+			oauth2.SetAuthURLParam(constants.QueryParamCodeChallengeMethod, constants.AuthorizationServerCodeChallengeMethod))
 
 		setState(w, state)
 		http.Redirect(w, r, authCodeURL, http.StatusSeeOther)
@@ -191,7 +194,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 		oauth2Conf := oauth2Config(r, p, conf)
 		oauth2Conf.ClientSecret = conf.Provider.ClientSecret
 		oauth2Token, err := oauth2Conf.Exchange(r.Context(), authorizationCode(r),
-			oauth2.SetAuthURLParam(queryParamCodeVerifier, tx.codeVerifier))
+			oauth2.SetAuthURLParam(constants.QueryParamCodeVerifier, tx.codeVerifier))
 		if err != nil {
 			l.WithError(err).Error("failed to exchange authorization code for tokens")
 			http.Error(w, "Failed to exchange authorization code for tokens", http.StatusBadRequest)
@@ -239,8 +242,8 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 		// Build redirect URL.
 		redirectURI := tx.clientParams.redirectURL
 		redirectParams := url.Values{}
-		redirectParams.Set(queryParamAuthorizationCode, authzCode)
-		redirectParams.Set(queryParamState, tx.clientParams.state)
+		redirectParams.Set(constants.QueryParamAuthorizationCode, authzCode)
+		redirectParams.Set(constants.QueryParamState, tx.clientParams.state)
 		redirectURL := fmt.Sprintf("%s?%s", redirectURI, redirectParams.Encode())
 
 		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
@@ -255,7 +258,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 			return
 		}
 
-		authzCode := r.FormValue(queryParamAuthorizationCode)
+		authzCode := r.FormValue(constants.QueryParamAuthorizationCode)
 
 		s, ok := sessionStore.retrieve(authzCode)
 		if !ok {
@@ -269,7 +272,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 		}
 
 		// Validate client PKCE.
-		if s.tx.clientParams.codeChallenge != pkceS256Challenge(r.FormValue(queryParamCodeVerifier)) {
+		if s.tx.clientParams.codeChallenge != pkceS256Challenge(r.FormValue(constants.QueryParamCodeVerifier)) {
 			http.Error(w, "PKCE failed", http.StatusBadRequest)
 			return
 		}
@@ -292,7 +295,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 	})
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !conf.Proxy.acceptsHost(r.Host) {
+		if !conf.Proxy.AcceptsHost(r.Host) {
 			http.Error(w, "Host not allowed", http.StatusMisdirectedRequest)
 			return
 		}
