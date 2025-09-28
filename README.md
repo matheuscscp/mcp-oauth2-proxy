@@ -52,14 +52,15 @@ flowchart TB
 
 ### How it Works
 
-1. **AI Client Authorization**: The AI client initiates its own OAuth2 + PKCE flow, treating mcp-oauth2-proxy as the authorization server
-2. **Proxy Mediation**: mcp-oauth2-proxy handles the OAuth flow by redirecting the user to complete authentication with the backing IdP
-3. **User Authentication**: The user authenticates with the Identity Provider (IdP) through their browser using OAuth2 + PKCE
-4. **Token Issuance**: After successful IdP authentication, mcp-oauth2-proxy issues its own JWT token to the AI client
-5. **MCP Access**: AI client uses the JWT token to access MCP servers through the reverse proxy
-6. **Request Routing**: Reverse proxy routes requests to appropriate MCP servers based on the Host header
-7. **Token Validation**: For each MCP request, the reverse proxy calls `/authenticate` to validate the bearer token
-8. **MCP Server Access**: Reverse proxy forwards the request to the MCP server with the validated token
+1. The user prompts the AI client to initiate the OAuth2 flow with mcp-oauth2-proxy
+2. If the MCP server advertises scopes, mcp-oauth2-proxy presents the [consent screen](#permissions-consent-screen)
+3. The mcp-oauth2-proxy redirects the user to the backing Identity Provider (IdP)
+4. The user authenticates with the IdP
+5. The IdP redirects back to mcp-oauth2-proxy with an authorization code
+6. The mcp-oauth2-proxy exchanges the authorization code for the user info and performs validations
+7. If validations pass, mcp-oauth2-proxy issues a JWT and redirects back to the AI client with another authorization code
+8. The AI client exchanges the authorization code for the issued JWT
+9. The AI client uses the JWT to access the MCP server
 
 ### API Endpoints
 
