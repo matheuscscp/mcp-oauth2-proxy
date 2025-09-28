@@ -291,5 +291,11 @@ func newAPI(ti *tokenIssuer, p provider, conf *config, sessionStore sessionStore
 		})
 	})
 
-	return mux
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !conf.Proxy.acceptsHost(r.Host) {
+			http.Error(w, "Host not allowed", http.StatusMisdirectedRequest)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
 }

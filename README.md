@@ -210,7 +210,7 @@ The main configuration options are:
 - `provider.allowedEmailDomains` (optional): List of Go regular expressions for allowed email domains.
 - `proxy.hosts`: List of MCP server hosts to proxy requests for.
 - `proxy.hosts[].host`: The HTTP Host header identifying the MCP server.
-- `proxy.hosts[].endpoint`: The endpoint for the MCP server. Will be used for listing tools.
+- `proxy.hosts[].endpoint` (optional): The internal endpoint where the MCP server can be reached by the proxy. Used for listing tools and scopes.
 - `proxy.disableConsentScreen` (optional): Disable the permissions consent screen. Defaults to `false`.
 - `proxy.allowedRedirectURLs` (optional): List of Go regular expressions for allowed redirect URLs.
 - `proxy.cors` (optional): Enable CORS support. Defaults to `false`.

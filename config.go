@@ -110,9 +110,9 @@ func (c *config) validateAndInitialize() error {
 	if c.Provider.ClientSecret == "" {
 		return fmt.Errorf("provider.clientSecret must be set")
 	}
-	for _, h := range c.Proxy.Hosts {
-		if h.Host == "" || h.Endpoint == "" {
-			return fmt.Errorf("both host and endpoint must be set for each proxy host")
+	for i, h := range c.Proxy.Hosts {
+		if h.Host == "" {
+			return fmt.Errorf("host is empty for proxy.hosts[%d]", i)
 		}
 	}
 
@@ -161,6 +161,15 @@ func (p *providerConfig) validateEmailDomain(email string) bool {
 	return false
 }
 
+func (p *proxyConfig) acceptsHost(host string) bool {
+	for _, h := range p.Hosts {
+		if h.Host == host {
+			return true
+		}
+	}
+	return false
+}
+
 func (p *proxyConfig) validateRedirectURL(url string) bool {
 	if url == "" {
 		return false
@@ -199,15 +208,20 @@ func (p *proxyConfig) supportedScopes(ctx context.Context, host string) ([]strin
 }
 
 func (p *proxyConfig) getSupportedScopes(ctx context.Context, h *hostConfig, now time.Time) ([]scopeConfig, error) {
+	ep := h.Endpoint
+	if ep == "" {
+		return nil, nil
+	}
+
 	h.scopesMu.Lock()
 	defer h.scopesMu.Unlock()
 
 	scopes := h.scopes
 	if !now.Before(h.scopesDeadline) {
 		var err error
-		scopes, err = p.fetchSupportedScopes(ctx, h.Endpoint)
+		scopes, err = p.fetchSupportedScopes(ctx, ep)
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch supported scopes from '%s': %w", h.Endpoint, err)
+			return nil, fmt.Errorf("failed to fetch supported scopes from '%s': %w", ep, err)
 		}
 		h.scopes = scopes
 		h.scopesDeadline = now.Add(scopesCacheDuration)
