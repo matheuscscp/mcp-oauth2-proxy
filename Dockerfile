@@ -7,7 +7,6 @@ RUN go mod download
 
 COPY ./*.go ./
 COPY ./internal ./internal
-COPY ./scopes.html ./
 
 # CGO_ENABLED=0 to build a statically-linked binary
 # -ldflags '-w -s' to strip debugging information for smaller size
