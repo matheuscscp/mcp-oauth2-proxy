@@ -19,6 +19,13 @@ import (
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/provider"
 )
 
+func TestNew(t *testing.T) {
+	g := NewWithT(t)
+	p, err := New(&config.ProviderConfig{})
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(p).ToNot(BeNil())
+}
+
 func TestGoogleProvider_oauth2Config(t *testing.T) {
 	g := NewWithT(t)
 

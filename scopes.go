@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/logging"
 )
 
 //go:embed scopes.html
@@ -56,7 +57,7 @@ func respondScopeSelectionPage(w http.ResponseWriter, r *http.Request, scopes []
 	// Marshal scopes for webpage.
 	b, err := json.Marshal(scopesForWebpage)
 	if err != nil {
-		fromRequest(r).WithError(err).Error("failed to marshal scopes for webpage")
+		logging.FromRequest(r).WithError(err).Error("failed to marshal scopes for webpage")
 		http.Error(w, "Failed to marshal scopes", http.StatusInternalServerError)
 		return
 	}
@@ -67,6 +68,6 @@ func respondScopeSelectionPage(w http.ResponseWriter, r *http.Request, scopes []
 	page = strings.ReplaceAll(page, "MCP_SCOPES", scopesJSON)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if _, err := w.Write([]byte(page)); err != nil {
-		fromRequest(r).WithError(err).Error("failed to write scope selection page")
+		logging.FromRequest(r).WithError(err).Error("failed to write scope selection page")
 	}
 }

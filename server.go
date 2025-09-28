@@ -10,6 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/logging"
 )
 
 func newServer(conf *config.Config, api http.Handler,
@@ -41,7 +42,7 @@ func newServer(conf *config.Config, api http.Handler,
 			}()
 
 			w = sr
-			r = intoRequest(r, logrus.WithField("http", logrus.Fields{
+			r = logging.IntoRequest(r, logrus.WithField("http", logrus.Fields{
 				"host":   r.Host,
 				"method": r.Method,
 				"path":   r.URL.Path,

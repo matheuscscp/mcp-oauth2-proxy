@@ -22,7 +22,7 @@ import (
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/provider"
 )
 
-func TestNewGitHubProvider(t *testing.T) {
+func TestNew(t *testing.T) {
 	tests := []struct {
 		name              string
 		config            *config.ProviderConfig
