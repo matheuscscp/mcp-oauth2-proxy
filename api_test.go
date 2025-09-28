@@ -23,6 +23,7 @@ import (
 
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/constants"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/provider"
 )
 
 // createMockMCPServer creates a test MCP server with scopes metadata
@@ -51,11 +52,11 @@ func createMockMCPServer(scopes []config.ScopeConfig) *httptest.Server {
 // mockProvider implements the provider interface for testing
 type mockProvider struct {
 	oauth2ConfigFunc func() *oauth2.Config
-	verifyUserResult *userInfo
+	verifyUserResult *provider.UserInfo
 	verifyUserError  error
 }
 
-func (m *mockProvider) oauth2Config() *oauth2.Config {
+func (m *mockProvider) OAuth2Config() *oauth2.Config {
 	if m.oauth2ConfigFunc != nil {
 		return m.oauth2ConfigFunc()
 	}
@@ -67,14 +68,14 @@ func (m *mockProvider) oauth2Config() *oauth2.Config {
 	}
 }
 
-func (m *mockProvider) verifyUser(ctx context.Context, ts oauth2.TokenSource) (*userInfo, error) {
+func (m *mockProvider) VerifyUser(ctx context.Context, ts oauth2.TokenSource) (*provider.UserInfo, error) {
 	if m.verifyUserError != nil {
 		return nil, m.verifyUserError
 	}
 	if m.verifyUserResult != nil {
 		return m.verifyUserResult, nil
 	}
-	return &userInfo{username: "test-user@example.com"}, nil
+	return &provider.UserInfo{Username: "test-user@example.com"}, nil
 }
 
 // mockSessionStore allows simulating sessionStore failures
@@ -1153,7 +1154,7 @@ func TestCallback(t *testing.T) {
 			g := NewWithT(t)
 
 			mockProv := &mockProvider{
-				verifyUserResult: &userInfo{username: "test-user@example.com"},
+				verifyUserResult: &provider.UserInfo{Username: "test-user@example.com"},
 				verifyUserError:  tt.verifyError,
 			}
 

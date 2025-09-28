@@ -1,4 +1,4 @@
-package main
+package google
 
 import (
 	"context"
@@ -16,13 +16,14 @@ import (
 	"golang.org/x/oauth2/google"
 
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/provider"
 )
 
 func TestGoogleProvider_oauth2Config(t *testing.T) {
 	g := NewWithT(t)
 
 	provider := &googleProvider{}
-	config := provider.oauth2Config()
+	config := provider.OAuth2Config()
 
 	g.Expect(config).ToNot(BeNil())
 	g.Expect(config.Endpoint).To(Equal(google.Endpoint))
@@ -38,7 +39,7 @@ func TestGoogleProvider_verifyUser(t *testing.T) {
 		validateEmail       func(email string) bool
 		setupMetadataServer bool // Whether to setup a metadata server
 		metadataServerFails bool // Whether metadata server should fail
-		expectedUser        *userInfo
+		expectedUser        *provider.UserInfo
 		expectedError       string
 	}{
 		{
@@ -51,7 +52,7 @@ func TestGoogleProvider_verifyUser(t *testing.T) {
 			validateEmail: func(email string) bool {
 				return email == "user@example.com"
 			},
-			expectedUser: &userInfo{username: "user@example.com"},
+			expectedUser: &provider.UserInfo{Username: "user@example.com"},
 		},
 		{
 			name: "unverified email",
@@ -200,7 +201,7 @@ func TestGoogleProvider_verifyUser(t *testing.T) {
 				},
 			})
 
-			user, err := provider.verifyUser(ctx, tokenSource)
+			user, err := provider.VerifyUser(ctx, tokenSource)
 
 			if tt.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
@@ -236,7 +237,7 @@ func TestGoogleProvider_verifyUser_NetworkError(t *testing.T) {
 		},
 	})
 
-	_, err := provider.verifyUser(ctx, tokenSource)
+	_, err := provider.VerifyUser(ctx, tokenSource)
 
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err.Error()).To(ContainSubstring("userinfo request failed"))
@@ -987,12 +988,11 @@ func TestGoogleProvider_Integration(t *testing.T) {
 	err := config.ValidateAndInitialize()
 	g.Expect(err).ToNot(HaveOccurred())
 
-	provider, err := newProvider(&config.Provider)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(provider).ToNot(BeNil())
+	p := &googleProvider{validateEmailDomain: config.Provider.ValidateEmailDomain}
+	g.Expect(p).ToNot(BeNil())
 
 	// Test oauth2Config
-	oauth2Config := provider.oauth2Config()
+	oauth2Config := p.OAuth2Config()
 	g.Expect(oauth2Config.Endpoint).To(Equal(google.Endpoint))
 	g.Expect(oauth2Config.Scopes).To(Equal([]string{"email"}))
 
@@ -1015,7 +1015,30 @@ func TestGoogleProvider_Integration(t *testing.T) {
 		Transport: &mockTransport{server: server},
 	})
 
-	user, err := provider.verifyUser(ctx, tokenSource)
+	user, err := p.VerifyUser(ctx, tokenSource)
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(user).To(Equal(&userInfo{username: "user@example.com"}))
+	g.Expect(user).To(Equal(&provider.UserInfo{Username: "user@example.com"}))
+}
+
+// mockTransport is a custom HTTP transport for testing
+type mockTransport struct {
+	server     *httptest.Server
+	shouldFail bool
+}
+
+func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if m.shouldFail {
+		return nil, http.ErrServerClosed // Simulate network error
+	}
+
+	// Redirect Google userinfo calls to our test server
+	if req.URL.Host == "openidconnect.googleapis.com" {
+		// Parse the test server URL to get the correct host
+		testURL := m.server.URL + req.URL.Path
+		newReq := req.Clone(req.Context())
+		newReq.URL, _ = newReq.URL.Parse(testURL)
+		return http.DefaultTransport.RoundTrip(newReq)
+	}
+
+	return http.DefaultTransport.RoundTrip(req)
 }

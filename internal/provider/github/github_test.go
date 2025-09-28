@@ -1,4 +1,4 @@
-package main
+package github
 
 import (
 	"context"
@@ -19,6 +19,7 @@ import (
 	"golang.org/x/oauth2/github"
 
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/provider"
 )
 
 func TestNewGitHubProvider(t *testing.T) {
@@ -85,7 +86,7 @@ func TestNewGitHubProvider(t *testing.T) {
 				t.Setenv(envGitHubAppPrivateKey, "")
 			}
 
-			provider, err := newGitHubProvider(tt.config)
+			provider, err := New(tt.config)
 
 			if tt.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
@@ -105,7 +106,7 @@ func TestGitHubProvider_oauth2Config(t *testing.T) {
 	g := NewWithT(t)
 
 	provider := &githubProvider{}
-	config := provider.oauth2Config()
+	config := provider.OAuth2Config()
 
 	g.Expect(config).ToNot(BeNil())
 	g.Expect(config.Endpoint).To(Equal(github.Endpoint))
@@ -122,7 +123,7 @@ func TestGitHubProvider_verifyUser(t *testing.T) {
 		setupPrivateKey bool // Whether to set up private key environment
 		orgVerifyError  error
 		orgVerifyGroups []string
-		expectedUser    *userInfo
+		expectedUser    *provider.UserInfo
 		expectedError   string
 	}{
 		{
@@ -133,7 +134,7 @@ func TestGitHubProvider_verifyUser(t *testing.T) {
 			userStatus:      http.StatusOK,
 			organization:    "",
 			setupPrivateKey: false,
-			expectedUser:    &userInfo{username: "testuser"},
+			expectedUser:    &provider.UserInfo{Username: "testuser"},
 		},
 		{
 			name: "valid user with organization but no groups",
@@ -144,7 +145,7 @@ func TestGitHubProvider_verifyUser(t *testing.T) {
 			organization:    "test-org",
 			setupPrivateKey: true,
 			orgVerifyGroups: nil,
-			expectedUser:    &userInfo{username: "testuser", groups: nil},
+			expectedUser:    &provider.UserInfo{Username: "testuser", Groups: nil},
 		},
 		{
 			name: "valid user with organization and groups",
@@ -155,7 +156,7 @@ func TestGitHubProvider_verifyUser(t *testing.T) {
 			organization:    "test-org",
 			setupPrivateKey: true,
 			orgVerifyGroups: []string{"engineering", "devops"},
-			expectedUser:    &userInfo{username: "testuser", groups: []string{"engineering", "devops"}},
+			expectedUser:    &provider.UserInfo{Username: "testuser", Groups: []string{"engineering", "devops"}},
 		},
 		{
 			name:            "user API error",
@@ -177,7 +178,7 @@ func TestGitHubProvider_verifyUser(t *testing.T) {
 			},
 			userStatus:      http.StatusOK,
 			setupPrivateKey: false,
-			expectedUser:    &userInfo{username: ""}, // Empty username
+			expectedUser:    &provider.UserInfo{Username: ""}, // Empty username
 		},
 		{
 			name: "organization verification failure",
@@ -300,7 +301,7 @@ func TestGitHubProvider_verifyUser(t *testing.T) {
 
 			// Create a context with custom HTTP client
 			ctx := context.WithValue(context.Background(), oauth2.HTTPClient, &http.Client{
-				Transport: &githubMockTransport{
+				Transport: &mockTransport{
 					server:        server,
 					orgError:      tt.orgVerifyError,
 					orgGroups:     tt.orgVerifyGroups,
@@ -309,7 +310,7 @@ func TestGitHubProvider_verifyUser(t *testing.T) {
 				},
 			})
 
-			user, err := provider.verifyUser(ctx, tokenSource)
+			user, err := provider.VerifyUser(ctx, tokenSource)
 
 			if tt.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
@@ -334,12 +335,12 @@ func TestGitHubProvider_verifyUser_NetworkError(t *testing.T) {
 
 	// Use a context with a client that will fail
 	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, &http.Client{
-		Transport: &githubMockTransport{
+		Transport: &mockTransport{
 			shouldFail: true,
 		},
 	})
 
-	_, err := provider.verifyUser(ctx, tokenSource)
+	_, err := provider.VerifyUser(ctx, tokenSource)
 
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err.Error()).To(ContainSubstring("user request failed"))
@@ -709,8 +710,8 @@ func TestGitHubProvider_newOrganizationClients(t *testing.T) {
 	}
 }
 
-// githubMockTransport is a custom transport for mocking GitHub API calls
-type githubMockTransport struct {
+// mockTransport is a custom transport for mocking GitHub API calls
+type mockTransport struct {
 	server        *httptest.Server
 	shouldFail    bool
 	orgError      error
@@ -719,7 +720,7 @@ type githubMockTransport struct {
 	orgName       string
 }
 
-func (t *githubMockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if t.shouldFail {
 		return nil, fmt.Errorf("simulated network failure")
 	}
@@ -793,12 +794,12 @@ func TestGitHubProvider_Integration(t *testing.T) {
 			Organization: "",
 		}
 
-		provider, err := newGitHubProvider(config)
+		p, err := New(config)
 		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(provider).ToNot(BeNil())
+		g.Expect(p).ToNot(BeNil())
 
 		// Test oauth2Config
-		oauth2Config := provider.oauth2Config()
+		oauth2Config := p.OAuth2Config()
 		g.Expect(oauth2Config.Endpoint).To(Equal(github.Endpoint))
 		g.Expect(oauth2Config.Scopes).To(BeEmpty())
 
@@ -817,12 +818,12 @@ func TestGitHubProvider_Integration(t *testing.T) {
 		})
 
 		ctx := context.WithValue(context.Background(), oauth2.HTTPClient, &http.Client{
-			Transport: &githubMockTransport{server: server},
+			Transport: &mockTransport{server: server},
 		})
 
-		user, err := provider.verifyUser(ctx, tokenSource)
+		user, err := p.VerifyUser(ctx, tokenSource)
 		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(user).To(Equal(&userInfo{username: "octocat"}))
+		g.Expect(user).To(Equal(&provider.UserInfo{Username: "octocat"}))
 	})
 
 	// Test with organization
@@ -844,7 +845,7 @@ func TestGitHubProvider_Integration(t *testing.T) {
 			Organization: "test-org",
 		}
 
-		provider, err := newGitHubProvider(config)
+		provider, err := New(config)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(provider).ToNot(BeNil())
 		g.Expect(provider.appClientID).To(Equal("test-app-id"))

@@ -1,4 +1,4 @@
-package main
+package google
 
 import (
 	"context"
@@ -20,20 +20,25 @@ import (
 	"google.golang.org/api/option"
 
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/provider"
 )
 
 type googleProvider struct {
 	validateEmailDomain func(email string) bool
 }
 
-func (*googleProvider) oauth2Config() *oauth2.Config {
+func New(conf *config.ProviderConfig) (*googleProvider, error) {
+	return &googleProvider{validateEmailDomain: conf.ValidateEmailDomain}, nil
+}
+
+func (*googleProvider) OAuth2Config() *oauth2.Config {
 	return &oauth2.Config{
 		Endpoint: google.Endpoint,
 		Scopes:   []string{"email"},
 	}
 }
 
-func (g *googleProvider) verifyUser(ctx context.Context, ts oauth2.TokenSource) (*userInfo, error) {
+func (g *googleProvider) VerifyUser(ctx context.Context, ts oauth2.TokenSource) (*provider.UserInfo, error) {
 	// Call userinfo endpoint.
 	client := oauth2.NewClient(ctx, ts)
 	resp, err := client.Get("https://openidconnect.googleapis.com/v1/userinfo")
@@ -69,9 +74,9 @@ func (g *googleProvider) verifyUser(ctx context.Context, ts oauth2.TokenSource) 
 		return nil, fmt.Errorf("failed to verify Google Workspace user info: %w", err)
 	}
 
-	return &userInfo{
-		username: email,
-		groups:   groups,
+	return &provider.UserInfo{
+		Username: email,
+		Groups:   groups,
 	}, nil
 }
 

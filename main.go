@@ -14,6 +14,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
+	provider "github.com/matheuscscp/mcp-oauth2-proxy/internal/provider/factory"
 )
 
 func main() {
@@ -41,7 +42,7 @@ func main() {
 	logrus.WithField("config", redactedConfig).Info("config loaded")
 
 	// Create provider.
-	prov, err := newProvider(&conf.Provider)
+	p, err := provider.New(&conf.Provider)
 	if err != nil {
 		logrus.WithError(err).Fatal("failed to create provider")
 	}
@@ -49,7 +50,7 @@ func main() {
 	// Create server.
 	iss := newTokenIssuer()
 	store := newMemorySessionStore()
-	api := newAPI(iss, prov, conf, store, time.Now)
+	api := newAPI(iss, p, conf, store, time.Now)
 	s := newServer(conf, api, prometheus.DefaultRegisterer, prometheus.DefaultGatherer)
 
 	// Start server.

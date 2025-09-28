@@ -1,4 +1,4 @@
-package main
+package github
 
 import (
 	"context"
@@ -14,9 +14,10 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/github"
+	githuboauth2 "golang.org/x/oauth2/github"
 
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/provider"
 )
 
 type githubProvider struct {
@@ -28,7 +29,7 @@ const (
 	envGitHubAppPrivateKey = "GITHUB_APP_PRIVATE_KEY"
 )
 
-func newGitHubProvider(conf *config.ProviderConfig) (*githubProvider, error) {
+func New(conf *config.ProviderConfig) (*githubProvider, error) {
 	hasOrg := conf.Organization != ""
 	hasAppPK := os.Getenv(envGitHubAppPrivateKey) != ""
 	if hasAppPK != hasOrg {
@@ -40,13 +41,13 @@ func newGitHubProvider(conf *config.ProviderConfig) (*githubProvider, error) {
 	}, nil
 }
 
-func (*githubProvider) oauth2Config() *oauth2.Config {
+func (*githubProvider) OAuth2Config() *oauth2.Config {
 	return &oauth2.Config{
-		Endpoint: github.Endpoint,
+		Endpoint: githuboauth2.Endpoint,
 	}
 }
 
-func (g *githubProvider) verifyUser(ctx context.Context, ts oauth2.TokenSource) (*userInfo, error) {
+func (g *githubProvider) VerifyUser(ctx context.Context, ts oauth2.TokenSource) (*provider.UserInfo, error) {
 	// Call user endpoint.
 	client := oauth2.NewClient(ctx, ts)
 	resp, err := client.Get("https://api.github.com/user")
@@ -73,9 +74,9 @@ func (g *githubProvider) verifyUser(ctx context.Context, ts oauth2.TokenSource) 
 		return nil, fmt.Errorf("failed to verify GitHub Organization user info: %w", err)
 	}
 
-	return &userInfo{
-		username: username,
-		groups:   groups,
+	return &provider.UserInfo{
+		Username: username,
+		Groups:   groups,
 	}, nil
 }
 
