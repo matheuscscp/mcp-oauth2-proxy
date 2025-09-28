@@ -11,6 +11,7 @@ import (
 
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/constants"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/provider"
 )
 
 const (
@@ -30,7 +31,9 @@ const (
 	pathJWKS                = "/openid/v1/jwks"
 )
 
-func newAPI(ti *tokenIssuer, p provider, conf *config.Config, sessionStore sessionStore, nowFunc func() time.Time) http.Handler {
+func newAPI(ti *tokenIssuer, p provider.Interface, conf *config.Config,
+	sessionStore sessionStore, nowFunc func() time.Time) http.Handler {
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc(pathAuthenticate, func(w http.ResponseWriter, r *http.Request) {
@@ -201,7 +204,7 @@ func newAPI(ti *tokenIssuer, p provider, conf *config.Config, sessionStore sessi
 			return
 		}
 
-		user, err := p.verifyUser(r.Context(), oauth2.StaticTokenSource(oauth2Token))
+		user, err := p.VerifyUser(r.Context(), oauth2.StaticTokenSource(oauth2Token))
 		if err != nil {
 			l.WithError(err).Error("failed to verify user")
 			http.Error(w, "Failed to verify user", http.StatusBadRequest)
@@ -210,10 +213,10 @@ func newAPI(ti *tokenIssuer, p provider, conf *config.Config, sessionStore sessi
 
 		// Issue an access token in the proxy realm.
 		iss := baseURL(r)
-		sub := user.username
+		sub := user.Username
 		aud := baseURL(r)
 		now := nowFunc()
-		groups := user.groups
+		groups := user.Groups
 		scopes := tx.clientParams.scopes
 		accessToken, exp, err := ti.issue(iss, sub, aud, now, groups, scopes)
 		if err != nil {

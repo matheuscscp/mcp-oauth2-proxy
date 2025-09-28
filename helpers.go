@@ -10,6 +10,7 @@ import (
 
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/constants"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/provider"
 )
 
 func baseURL(r *http.Request) string {
@@ -36,8 +37,8 @@ func bearerToken(r *http.Request) string {
 	return strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 }
 
-func oauth2Config(r *http.Request, p provider, conf *config.Config) *oauth2.Config {
-	c := p.oauth2Config()
+func oauth2Config(r *http.Request, p provider.Interface, conf *config.Config) *oauth2.Config {
+	c := p.OAuth2Config()
 	c.ClientID = conf.Provider.ClientID
 	c.RedirectURL = callbackURL(r)
 	return c
