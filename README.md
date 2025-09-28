@@ -64,12 +64,12 @@ flowchart TB
 
 ### API Endpoints
 
-mcp-oauth2-proxy exposes the following HTTP endpoints:
+The mcp-oauth2-proxy exposes the following HTTP endpoints:
 
 #### Authentication Endpoint
 - **`/authenticate`** - Token validation endpoint used by reverse proxy
   - **Input Headers**:
-    - `Authorization: Bearer <jwt-token>` - JWT token issued by mcp-oauth2-proxy
+    - `Authorization: Bearer <jwt-token>` - JWT issued by mcp-oauth2-proxy
   - **Output Headers** (on failure - HTTP 401):
     - `WWW-Authenticate: Bearer realm="mcp-oauth2-proxy", resource_metadata="<base-url>/.well-known/oauth-protected-resource"`
 
@@ -91,7 +91,7 @@ mcp-oauth2-proxy exposes the following HTTP endpoints:
     - `jwks_uri` - URL of the JSON Web Key Set containing signing keys
     - `id_token_signing_alg_values_supported` - Supported signing algorithms (RS256)
 - **`/openid/v1/jwks`** - JSON Web Key Set (JWKS) for token verification
-  - **Response**: JSON containing public keys used for JWT token signature verification
+  - **Response**: JSON containing public keys used for JWT signature verification
   - **Fields**:
     - `keys` - Array of JWK objects containing RSA public keys for token verification
 
@@ -99,15 +99,15 @@ mcp-oauth2-proxy exposes the following HTTP endpoints:
 
 - **Dual OAuth2 Flows**: Creates an authorization realm where the AI client never knows about the backing IdP
 - **Cryptographic Isolation**: Keeps IdP cryptographic material secure, away from both AI clients and MCP servers
-- **JWT Token Management**: Issues and manages its own JWT tokens for secure communication
+- **Token Management**: Issues and manages its own JWTs for secure communication
 - **Automatic Key Rotation**: Handles private key rotation for token signing and verification
-- **Host-based Routing**: Supports multiple MCP servers through HTTP Host header routing
-- **Permissions Consent Screen**: If the MCP server advertises a set of scopes, the user is presented with a consent screen
-- **Audit Logs**: Logs client registration, key generation and token issuance events
+- **Audit Logs**: Logs client registration, key generation and issued token claims
+- **Host-based Identification**: Supports multiple MCP servers through HTTP Host header identification
+- **Permissions Consent Screen**: If the MCP server advertises scopes, the user is presented with a consent screen
 
 **Note:** The signing keys live only in memory and are rotated hourly.
 To force an immediate key rotation, simply restart the proxy.
-This will invalidte all existing tokens.
+This will invalidate all existing tokens.
 
 #### Permissions Consent Screen
 
