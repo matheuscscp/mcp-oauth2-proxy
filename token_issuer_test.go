@@ -125,7 +125,7 @@ func TestTokenIssuer_issue(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 
 				// Check scopes claim
-				var tokenScopes []interface{}
+				var tokenScopes []any
 				scopesErr := token.Get("scopes", &tokenScopes)
 				if tt.scopes == nil {
 					g.Expect(scopesErr).To(HaveOccurred()) // No scopes claim should be present

@@ -36,7 +36,7 @@ func createMockMCPServer(scopes []config.ScopeConfig) *httptest.Server {
 					// Add scopes to the metadata
 					if result.Meta == nil {
 						result.Meta = &mcp.Meta{
-							AdditionalFields: make(map[string]interface{}),
+							AdditionalFields: make(map[string]any),
 						}
 					}
 					result.Meta.AdditionalFields["scopes"] = scopes

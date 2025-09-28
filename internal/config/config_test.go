@@ -778,7 +778,7 @@ func createMockMCPServer(scopes []ScopeConfig) *httptest.Server {
 					// Add scopes to the metadata
 					if result.Meta == nil {
 						result.Meta = &mcp.Meta{
-							AdditionalFields: make(map[string]interface{}),
+							AdditionalFields: make(map[string]any),
 						}
 					}
 					result.Meta.AdditionalFields["scopes"] = scopes
@@ -801,7 +801,7 @@ func createMockMCPServerWithBogusJSON() *httptest.Server {
 					// Add invalid data that will cause JSON unmarshaling to fail
 					if result.Meta == nil {
 						result.Meta = &mcp.Meta{
-							AdditionalFields: make(map[string]interface{}),
+							AdditionalFields: make(map[string]any),
 						}
 					}
 					// Create a struct that will marshal to JSON but unmarshal incorrectly

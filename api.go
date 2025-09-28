@@ -11,6 +11,7 @@ import (
 
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/constants"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/logging"
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/provider"
 )
 
@@ -46,7 +47,7 @@ func newAPI(ti *tokenIssuer, p provider.Interface, conf *config.Config,
 			return
 		}
 
-		fromRequest(r).Debug("request authenticated")
+		logging.FromRequest(r).Debug("request authenticated")
 	})
 
 	mux.HandleFunc(pathOAuthProtectedResource, func(w http.ResponseWriter, r *http.Request) {
@@ -61,7 +62,7 @@ func newAPI(ti *tokenIssuer, p provider.Interface, conf *config.Config,
 	mux.HandleFunc(pathOAuthAuthorizationServer, func(w http.ResponseWriter, r *http.Request) {
 		supportedScopes, _, err := conf.Proxy.SupportedScopes(r.Context(), r.Host)
 		if err != nil {
-			fromRequest(r).WithError(err).Error("failed to get supported scopes")
+			logging.FromRequest(r).WithError(err).Error("failed to get supported scopes")
 			http.Error(w, "Failed to get supported scopes", http.StatusInternalServerError)
 			return
 		}
@@ -80,7 +81,7 @@ func newAPI(ti *tokenIssuer, p provider.Interface, conf *config.Config,
 	})
 
 	mux.HandleFunc(pathRegister, func(w http.ResponseWriter, r *http.Request) {
-		l := fromRequest(r)
+		l := logging.FromRequest(r)
 
 		var req struct {
 			RedirectURIs            []string `json:"redirect_uris,omitempty"`
@@ -123,7 +124,7 @@ func newAPI(ti *tokenIssuer, p provider.Interface, conf *config.Config,
 	})
 
 	mux.HandleFunc(pathAuthorize, func(w http.ResponseWriter, r *http.Request) {
-		l := fromRequest(r)
+		l := logging.FromRequest(r)
 
 		// Fetch supported scopes for the host.
 		supportedScopeNames, supportedScopes, err := conf.Proxy.SupportedScopes(r.Context(), r.Host)
@@ -173,7 +174,7 @@ func newAPI(ti *tokenIssuer, p provider.Interface, conf *config.Config,
 	})
 
 	mux.HandleFunc(pathCallback, func(w http.ResponseWriter, r *http.Request) {
-		l := fromRequest(r)
+		l := logging.FromRequest(r)
 
 		state, err := getAndDeleteStateAndCheckCSRF(w, r)
 		if err != nil {
@@ -253,7 +254,7 @@ func newAPI(ti *tokenIssuer, p provider.Interface, conf *config.Config,
 	})
 
 	mux.HandleFunc(pathToken, func(w http.ResponseWriter, r *http.Request) {
-		l := fromRequest(r)
+		l := logging.FromRequest(r)
 
 		if err := r.ParseForm(); err != nil {
 			l.WithError(err).Error("failed to parse form")

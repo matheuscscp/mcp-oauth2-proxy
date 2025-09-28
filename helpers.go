@@ -10,6 +10,7 @@ import (
 
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/constants"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/logging"
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/provider"
 )
 
@@ -56,6 +57,6 @@ func respondJSON(w http.ResponseWriter, r *http.Request, status int, payload any
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
-		fromRequest(r).WithError(err).Error("failed to write response")
+		logging.FromRequest(r).WithError(err).Error("failed to write response")
 	}
 }
