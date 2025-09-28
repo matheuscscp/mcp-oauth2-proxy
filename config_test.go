@@ -216,7 +216,7 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 			},
 		},
 		{
-			name: "config with hosts missing endpoint - validation error",
+			name: "config with hosts missing endpoint - should be valid now",
 			config: config{
 				Provider: providerConfig{
 					Name:         "test-provider",
@@ -227,13 +227,52 @@ func TestConfig_validateAndInitialize(t *testing.T) {
 					Hosts: []*hostConfig{
 						{
 							Host:     "example.com",
-							Endpoint: "", // Missing endpoint
+							Endpoint: "", // Missing endpoint is now valid
+						},
+					},
+				},
+			},
+			wantErr: false,
+			expectedConfig: config{
+				Provider: providerConfig{
+					Name:                "test-provider",
+					ClientID:            "test-client-id",
+					ClientSecret:        "test-client-secret",
+					AllowedEmailDomains: []string{},
+				},
+				Proxy: proxyConfig{
+					AllowedRedirectURLs: []string{},
+					Hosts: []*hostConfig{
+						{
+							Host:     "example.com",
+							Endpoint: "",
+						},
+					},
+				},
+				Server: serverConfig{
+					Addr: ":8080",
+				},
+			},
+		},
+		{
+			name: "config with hosts missing host - validation error",
+			config: config{
+				Provider: providerConfig{
+					Name:         "test-provider",
+					ClientID:     "test-client-id",
+					ClientSecret: "test-client-secret",
+				},
+				Proxy: proxyConfig{
+					Hosts: []*hostConfig{
+						{
+							Host:     "", // Missing host
+							Endpoint: "http://example.com",
 						},
 					},
 				},
 			},
 			wantErr:        true,
-			expectedErrMsg: "both host and endpoint must be set for each proxy host",
+			expectedErrMsg: "host is empty for proxy.hosts[0]",
 		},
 	}
 
@@ -382,6 +421,62 @@ func TestProviderConfig_validateEmailDomain(t *testing.T) {
 	}
 }
 
+func TestProxyConfig_acceptsHost(t *testing.T) {
+	tests := []struct {
+		name           string
+		proxyConfig    proxyConfig
+		host           string
+		expectedResult bool
+	}{
+		{
+			name: "host in list",
+			proxyConfig: proxyConfig{
+				Hosts: []*hostConfig{
+					{Host: "example.com"},
+					{Host: "test.com"},
+				},
+			},
+			host:           "example.com",
+			expectedResult: true,
+		},
+		{
+			name: "host not in list",
+			proxyConfig: proxyConfig{
+				Hosts: []*hostConfig{
+					{Host: "example.com"},
+					{Host: "test.com"},
+				},
+			},
+			host:           "notallowed.com",
+			expectedResult: false,
+		},
+		{
+			name:           "empty hosts list",
+			proxyConfig:    proxyConfig{},
+			host:           "example.com",
+			expectedResult: false,
+		},
+		{
+			name: "empty host string",
+			proxyConfig: proxyConfig{
+				Hosts: []*hostConfig{
+					{Host: "example.com"},
+				},
+			},
+			host:           "",
+			expectedResult: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result := tt.proxyConfig.acceptsHost(tt.host)
+			g.Expect(result).To(Equal(tt.expectedResult))
+		})
+	}
+}
+
 func TestProxyConfig_validateRedirectURL(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -516,6 +611,19 @@ func TestProxyConfig_supportedScopes(t *testing.T) {
 					{
 						Host:     "other.com",
 						Endpoint: "http://localhost:8080",
+					},
+				},
+			},
+			host:     "example.com",
+			expected: []string{"mcp-oauth2-proxy"},
+		},
+		{
+			name: "host found but endpoint is empty - returns default scope",
+			proxy: proxyConfig{
+				Hosts: []*hostConfig{
+					{
+						Host:     "example.com",
+						Endpoint: "", // Empty endpoint should not fetch scopes
 					},
 				},
 			},

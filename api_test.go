@@ -141,6 +141,16 @@ func newTestConfig() *config {
 			ClientID:     "test-client-id",
 			ClientSecret: "test-client-secret",
 		},
+		Proxy: proxyConfig{
+			Hosts: []*hostConfig{
+				{
+					Host: "example.com",
+				},
+				{
+					Host: "other.example.com",
+				},
+			},
+		},
 		Server: serverConfig{
 			Addr: "localhost:8080",
 		},
@@ -302,6 +312,7 @@ func TestAuthenticate(t *testing.T) {
 		expectedStatus      int
 		expectedWWWAuth     bool
 		expectedAccessToken bool
+		requestHost         string
 	}{
 		{
 			name:            "missing bearer token",
@@ -321,6 +332,12 @@ func TestAuthenticate(t *testing.T) {
 			expectedStatus:      http.StatusOK,
 			expectedAccessToken: true,
 		},
+		{
+			name:           "host not allowed",
+			bearerToken:    "some-token",
+			expectedStatus: http.StatusMisdirectedRequest,
+			requestHost:    "not-allowed.com",
+		},
 	}
 
 	for _, tt := range tests {
@@ -335,6 +352,9 @@ func TestAuthenticate(t *testing.T) {
 			api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
 
 			req := httptest.NewRequest(http.MethodGet, pathAuthenticate, nil)
+			if tt.requestHost != "" {
+				req.Host = tt.requestHost
+			}
 			bearerToken := tt.bearerToken
 			if tt.useValidToken {
 				// Issue a valid token for this test
@@ -358,45 +378,97 @@ func TestAuthenticate(t *testing.T) {
 }
 
 func TestOAuthProtectedResource(t *testing.T) {
-	g := NewWithT(t)
+	tests := []struct {
+		name           string
+		requestHost    string
+		expectedStatus int
+		checkResponse  bool
+	}{
+		{
+			name:           "successful response",
+			requestHost:    "example.com",
+			expectedStatus: http.StatusOK,
+			checkResponse:  true,
+		},
+		{
+			name:           "host not allowed",
+			requestHost:    "not-allowed.com",
+			expectedStatus: http.StatusMisdirectedRequest,
+			checkResponse:  false,
+		},
+	}
 
-	tokenIssuer := newTestTokenIssuer(nil)
-	mockProv := &mockProvider{}
-	conf := newTestConfig()
-	sessionStore := newMemorySessionStore()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
 
-	api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
+			tokenIssuer := newTestTokenIssuer(nil)
+			mockProv := &mockProvider{}
+			conf := newTestConfig()
+			sessionStore := newMemorySessionStore()
 
-	req := httptest.NewRequest(http.MethodGet, pathOAuthProtectedResource, nil)
-	req.Host = "example.com"
-	rec := httptest.NewRecorder()
+			api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
 
-	api.ServeHTTP(rec, req)
+			req := httptest.NewRequest(http.MethodGet, pathOAuthProtectedResource, nil)
+			req.Host = tt.requestHost
+			rec := httptest.NewRecorder()
 
-	g.Expect(rec.Code).To(Equal(http.StatusOK))
-	g.Expect(rec.Header().Get("Content-Type")).To(Equal("application/json"))
+			api.ServeHTTP(rec, req)
 
-	response := parseJSONResponse(g, rec.Body.Bytes())
+			g.Expect(rec.Code).To(Equal(tt.expectedStatus))
 
-	authServers, ok := response["authorization_servers"].([]any)
-	g.Expect(ok).To(BeTrue())
-	g.Expect(authServers).To(HaveLen(1))
+			if tt.checkResponse {
+				g.Expect(rec.Header().Get("Content-Type")).To(Equal("application/json"))
 
-	authServer := authServers[0].(map[string]any)
-	g.Expect(authServer["issuer"]).To(Equal("https://example.com"))
-	g.Expect(authServer["authorization_endpoint"]).To(Equal("https://example.com" + pathAuthorize))
+				response := parseJSONResponse(g, rec.Body.Bytes())
+
+				authServers, ok := response["authorization_servers"].([]any)
+				g.Expect(ok).To(BeTrue())
+				g.Expect(authServers).To(HaveLen(1))
+
+				authServer := authServers[0].(map[string]any)
+				g.Expect(authServer["issuer"]).To(Equal("https://example.com"))
+				g.Expect(authServer["authorization_endpoint"]).To(Equal("https://example.com" + pathAuthorize))
+			}
+		})
+	}
 }
 
 func TestOAuthAuthorizationServer(t *testing.T) {
 	tests := []struct {
 		name           string
 		config         *config
+		requestHost    string
 		expectedStatus int
 		checkResponse  bool
 	}{
 		{
 			name:           "successful response with default scopes",
 			config:         newTestConfig(),
+			requestHost:    "example.com",
+			expectedStatus: http.StatusOK,
+			checkResponse:  true,
+		},
+		{
+			name: "successful response with no endpoint configured",
+			config: &config{
+				Provider: providerConfig{
+					ClientID:     "test-client-id",
+					ClientSecret: "test-client-secret",
+				},
+				Proxy: proxyConfig{
+					Hosts: []*hostConfig{
+						{
+							Host: "example.com",
+							// No endpoint configured - should still work
+						},
+					},
+				},
+				Server: serverConfig{
+					Addr: "localhost:8080",
+				},
+			},
+			requestHost:    "example.com",
 			expectedStatus: http.StatusOK,
 			checkResponse:  true,
 		},
@@ -419,7 +491,15 @@ func TestOAuthAuthorizationServer(t *testing.T) {
 					Addr: "localhost:8080",
 				},
 			},
+			requestHost:    "example.com",
 			expectedStatus: http.StatusInternalServerError,
+			checkResponse:  false,
+		},
+		{
+			name:           "host not allowed",
+			config:         newTestConfig(),
+			requestHost:    "not-allowed.com",
+			expectedStatus: http.StatusMisdirectedRequest,
 			checkResponse:  false,
 		},
 	}
@@ -435,7 +515,7 @@ func TestOAuthAuthorizationServer(t *testing.T) {
 			api := newAPI(tokenIssuer, mockProv, tt.config, sessionStore, time.Now)
 
 			req := httptest.NewRequest(http.MethodGet, pathOAuthAuthorizationServer, nil)
-			req.Host = "example.com"
+			req.Host = tt.requestHost
 			rec := httptest.NewRecorder()
 
 			api.ServeHTTP(rec, req)
@@ -492,6 +572,9 @@ func TestRegister(t *testing.T) {
 					ClientSecret: "test-client-secret",
 				},
 				Proxy: proxyConfig{
+					Hosts: []*hostConfig{
+						{Host: "example.com"},
+					},
 					AllowedRedirectURLs: []string{"^https://example\\.com/.*"},
 				},
 				Server: serverConfig{
@@ -519,6 +602,9 @@ func TestRegister(t *testing.T) {
 					ClientSecret: "test-client-secret",
 				},
 				Proxy: proxyConfig{
+					Hosts: []*hostConfig{
+						{Host: "example.com"},
+					},
 					AllowedRedirectURLs: []string{}, // Empty list should allow any URL
 				},
 				Server: serverConfig{
@@ -539,6 +625,9 @@ func TestRegister(t *testing.T) {
 					ClientSecret: "test-client-secret",
 				},
 				Proxy: proxyConfig{
+					Hosts: []*hostConfig{
+						{Host: "example.com"},
+					},
 					AllowedRedirectURLs: []string{"^https://example\\.com/.*"}, // This should match
 				},
 				Server: serverConfig{
@@ -644,6 +733,9 @@ func TestAuthorize(t *testing.T) {
 					ClientSecret: "test-client-secret",
 				},
 				Proxy: proxyConfig{
+					Hosts: []*hostConfig{
+						{Host: "example.com"},
+					},
 					AllowedRedirectURLs: []string{"^https://example\\.com/.*"},
 				},
 				Server: serverConfig{
@@ -670,6 +762,30 @@ func TestAuthorize(t *testing.T) {
 			queryParams:    fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
 			expectedStatus: http.StatusSeeOther,
 			expectRedirect: true,
+		},
+		{
+			name:                     "no scope selection when endpoint is empty",
+			queryParams:              fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", authorizationServerCodeChallengeMethod),
+			expectedStatus:           http.StatusSeeOther,
+			expectRedirect:           true,
+			expectScopeSelectionPage: false,
+			config: &config{
+				Provider: providerConfig{
+					ClientID:     "test-client-id",
+					ClientSecret: "test-client-secret",
+				},
+				Proxy: proxyConfig{
+					Hosts: []*hostConfig{
+						{
+							Host: "example.com",
+							// No endpoint configured - should not fetch scopes
+						},
+					},
+				},
+				Server: serverConfig{
+					Addr: "localhost:8080",
+				},
+			},
 		},
 		{
 			name:                 "failed to fetch supported scopes from invalid MCP endpoint",
@@ -968,6 +1084,7 @@ func TestCallback(t *testing.T) {
 		needsTokenServer bool
 		issueError       bool
 		requestHost      string
+		transactionHost  string // Host to use in the stored transaction
 	}{
 		{
 			name:           "missing CSRF cookie",
@@ -1000,12 +1117,21 @@ func TestCallback(t *testing.T) {
 			retrieveError:  true,
 		},
 		{
-			name:           "host mismatch",
+			name:           "host not allowed",
 			setupSession:   true,
 			setCookie:      true,
 			queryParams:    "code=auth-code&state=SESSION_KEY_PLACEHOLDER",
-			expectedStatus: http.StatusBadRequest,
-			requestHost:    "different.com",
+			expectedStatus: http.StatusMisdirectedRequest,
+			requestHost:    "not-allowed.com",
+		},
+		{
+			name:            "host mismatch with transaction",
+			setupSession:    true,
+			setCookie:       true,
+			queryParams:     "code=auth-code&state=SESSION_KEY_PLACEHOLDER",
+			expectedStatus:  http.StatusBadRequest,
+			requestHost:     "example.com",       // This host is allowed, but doesn't match the transaction host
+			transactionHost: "other.example.com", // Different host in the transaction
 		},
 		{
 			name:             "session store error in callback",
@@ -1113,6 +1239,10 @@ func TestCallback(t *testing.T) {
 			var sessionKey string
 			if tt.setupSession {
 				tx := newTestTransaction()
+				// Override transaction host if specified
+				if tt.transactionHost != "" {
+					tx.host = tt.transactionHost
+				}
 				var err error
 				sessionKey, err = sessionStore.storeTransaction(tx)
 				g.Expect(err).ToNot(HaveOccurred())
@@ -1156,12 +1286,13 @@ func TestCallback(t *testing.T) {
 
 func TestToken(t *testing.T) {
 	tests := []struct {
-		name           string
-		setupSession   bool
-		formData       string
-		expectedStatus int
-		checkResponse  bool
-		requestHost    string
+		name            string
+		setupSession    bool
+		formData        string
+		expectedStatus  int
+		checkResponse   bool
+		requestHost     string
+		transactionHost string // Host to use in the stored transaction/session
 	}{
 		{
 			name:           "invalid form data",
@@ -1181,11 +1312,19 @@ func TestToken(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:           "host mismatch",
+			name:           "host not allowed",
 			setupSession:   true,
 			formData:       "code=valid-code&code_verifier=test-verifier",
-			expectedStatus: http.StatusBadRequest,
-			requestHost:    "different.com",
+			expectedStatus: http.StatusMisdirectedRequest,
+			requestHost:    "not-allowed.com",
+		},
+		{
+			name:            "host mismatch with session",
+			setupSession:    true,
+			formData:        "code=valid-code&code_verifier=test-verifier",
+			expectedStatus:  http.StatusBadRequest,
+			requestHost:     "example.com",       // This host is allowed, but doesn't match the session's transaction host
+			transactionHost: "other.example.com", // Different host in the transaction
 		},
 		{
 			name:           "successful token exchange",
@@ -1211,6 +1350,10 @@ func TestToken(t *testing.T) {
 			var jwtToken string
 			if tt.setupSession {
 				tx := newTestTransaction()
+				// Override transaction host if specified
+				if tt.transactionHost != "" {
+					tx.host = tt.transactionHost
+				}
 
 				// Issue a real JWT token for this test
 				now := time.Now()
