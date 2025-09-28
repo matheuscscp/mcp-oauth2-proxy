@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"regexp"
 	"strings"
@@ -123,9 +124,6 @@ func (g *googleProvider) verifyGoogleWorkspaceUser(ctx context.Context, userEmai
 	return groups, nil
 }
 
-var googleServiceAccountEmailRegex = regexp.MustCompile(
-	`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-
 var googleServiceAccountImpersonationURLRegex = regexp.MustCompile(
 	`^https://iamcredentials\.googleapis\.com/v1/projects/-/serviceAccounts/(.{1,100}):generateAccessToken$`)
 
@@ -137,8 +135,8 @@ func (*googleProvider) getServiceAccountEmailFromEnv(ctx context.Context) (strin
 		if err != nil {
 			return "", fmt.Errorf("failed to get default Service Account email from metadata server: %w", err)
 		}
-		if googleServiceAccountEmailRegex.MatchString(email) {
-			return email, nil
+		if ma, err := mail.ParseAddress(email); err == nil && ma != nil {
+			return ma.Address, nil
 		}
 		return "", nil
 	}
