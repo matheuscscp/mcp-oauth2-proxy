@@ -23,254 +23,9 @@ import (
 
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/constants"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/issuer"
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/provider"
 )
-
-// createMockMCPServer creates a test MCP server with scopes metadata
-func createMockMCPServer(scopes []config.ScopeConfig) *httptest.Server {
-	mcpServer := server.NewMCPServer("test-mcp-server", "1.0.0",
-		server.WithToolCapabilities(true),
-		server.WithHooks(&server.Hooks{
-			OnAfterListTools: []server.OnAfterListToolsFunc{
-				func(ctx context.Context, id any, message *mcp.ListToolsRequest, result *mcp.ListToolsResult) {
-					// Add scopes to the metadata
-					if result.Meta == nil {
-						result.Meta = &mcp.Meta{
-							AdditionalFields: make(map[string]any),
-						}
-					}
-					result.Meta.AdditionalFields["scopes"] = scopes
-				},
-			},
-		}),
-	)
-
-	// Create and return the test server
-	return server.NewTestStreamableHTTPServer(mcpServer)
-}
-
-// mockProvider implements the provider interface for testing
-type mockProvider struct {
-	oauth2ConfigFunc func() *oauth2.Config
-	verifyUserResult *provider.UserInfo
-	verifyUserError  error
-}
-
-func (m *mockProvider) OAuth2Config() *oauth2.Config {
-	if m.oauth2ConfigFunc != nil {
-		return m.oauth2ConfigFunc()
-	}
-	return &oauth2.Config{
-		Endpoint: oauth2.Endpoint{
-			AuthURL:  "https://example.com/auth",
-			TokenURL: "https://example.com/token",
-		},
-	}
-}
-
-func (m *mockProvider) VerifyUser(ctx context.Context, ts oauth2.TokenSource) (*provider.UserInfo, error) {
-	if m.verifyUserError != nil {
-		return nil, m.verifyUserError
-	}
-	if m.verifyUserResult != nil {
-		return m.verifyUserResult, nil
-	}
-	return &provider.UserInfo{Username: "test-user@example.com"}, nil
-}
-
-// mockSessionStore allows simulating sessionStore failures
-type mockSessionStore struct {
-	sessionStore
-	storeError            error
-	storeTransactionError error
-	retrieveError         bool
-}
-
-func (m *mockSessionStore) store(s *session) (string, error) {
-	if m.storeError != nil {
-		return "", m.storeError
-	}
-	return m.sessionStore.store(s)
-}
-
-func (m *mockSessionStore) storeTransaction(tx *transaction) (string, error) {
-	if m.storeTransactionError != nil {
-		return "", m.storeTransactionError
-	}
-	return m.sessionStore.storeTransaction(tx)
-}
-
-func (m *mockSessionStore) retrieve(key string) (*session, bool) {
-	if m.retrieveError {
-		return nil, false
-	}
-	return m.sessionStore.retrieve(key)
-}
-
-func (m *mockSessionStore) retrieveTransaction(key string) (*transaction, bool) {
-	if m.retrieveError {
-		return nil, false
-	}
-	return m.sessionStore.retrieveTransaction(key)
-}
-
-func newTestConfig() *config.Config {
-	return &config.Config{
-		Provider: config.ProviderConfig{
-			ClientID:     "test-client-id",
-			ClientSecret: "test-client-secret",
-		},
-		Proxy: config.ProxyConfig{
-			Hosts: []*config.HostConfig{
-				{
-					Host: "example.com",
-				},
-				{
-					Host: "other.example.com",
-				},
-			},
-		},
-		Server: config.ServerConfig{
-			Addr: "localhost:8080",
-		},
-	}
-}
-
-func setupConfig(g *WithT, conf *config.Config) *config.Config {
-	if conf == nil {
-		conf = newTestConfig()
-	}
-	conf.Provider.Name = "mock"
-	err := conf.ValidateAndInitialize()
-	g.Expect(err).ToNot(HaveOccurred())
-	return conf
-}
-
-func parseJSONResponse(g *WithT, body []byte) map[string]any {
-	var response map[string]any
-	err := json.Unmarshal(body, &response)
-	g.Expect(err).ToNot(HaveOccurred())
-	return response
-}
-
-func newTestTransaction() *transaction {
-	return &transaction{
-		clientParams: transactionClientParams{
-			codeChallenge: pkceS256Challenge("test-verifier"),
-			redirectURL:   "https://example.com/callback",
-			state:         "test-state",
-		},
-		codeVerifier: "test-verifier",
-		host:         "example.com",
-	}
-}
-
-// mockPrivateKeySource implements the privateKeySource interface for testing
-type mockPrivateKeySource struct {
-	currentError  error
-	privateKey    jwk.Key
-	publicKeyList []jwk.Key
-}
-
-func (m *mockPrivateKeySource) current(now time.Time) (private jwk.Key, err error) {
-	if m.currentError != nil {
-		return nil, m.currentError
-	}
-	defer func() {
-		public, _ := private.PublicKey()
-		thumbprint, _ := public.Thumbprint(crypto.SHA256)
-		keyID := fmt.Sprintf("%x", thumbprint)
-		private.Set(jwk.KeyIDKey, keyID)
-		public.Set(jwk.KeyIDKey, keyID)
-	}()
-	if m.privateKey != nil {
-		return m.privateKey, nil
-	}
-	// Generate a test key if none provided
-	priv, _ := rsa.GenerateKey(rand.Reader, 2048)
-	private, _ = jwk.Import(priv)
-	return private, nil
-}
-
-func (m *mockPrivateKeySource) publicKeys(now time.Time) []jwk.Key {
-	return m.publicKeyList
-}
-
-func newTestTokenIssuer(keySource privateKeySource) *tokenIssuer {
-	if keySource == nil {
-		// Create a working test key source with the same key for signing and verifying
-		priv, _ := rsa.GenerateKey(rand.Reader, 2048)
-		privateKey, _ := jwk.Import(priv)
-		publicKey, _ := privateKey.PublicKey()
-		keySource = &mockPrivateKeySource{
-			privateKey:    privateKey,
-			publicKeyList: []jwk.Key{publicKey},
-		}
-	}
-	return &tokenIssuer{keySource}
-}
-
-// newTestTokenIssuerWithSharedKeys creates a token issuer that uses the same keys for all tests
-func newTestTokenIssuerWithSharedKeys() (*tokenIssuer, jwk.Key, jwk.Key) {
-	priv, _ := rsa.GenerateKey(rand.Reader, 2048)
-	privateKey, _ := jwk.Import(priv)
-	publicKey, _ := privateKey.PublicKey()
-	keySource := &mockPrivateKeySource{
-		privateKey:    privateKey,
-		publicKeyList: []jwk.Key{publicKey},
-	}
-	return &tokenIssuer{keySource}, privateKey, publicKey
-}
-
-// parseJWT parses and validates a JWT token using the given public key
-func parseJWT(g *WithT, tokenString string, publicKey jwk.Key) jwt.Token {
-	token, err := jwt.Parse([]byte(tokenString), jwt.WithKey(issuerAlgorithm(), publicKey), jwt.WithValidate(true))
-	g.Expect(err).ToNot(HaveOccurred())
-	return token
-}
-
-// assertJWTClaims verifies standard JWT claims
-func assertJWTClaims(g *WithT, token jwt.Token, expectedIssuer, expectedSubject, expectedAudience string) {
-	issuer, ok := token.Issuer()
-	g.Expect(ok).To(BeTrue())
-	g.Expect(issuer).To(Equal(expectedIssuer))
-
-	subject, ok := token.Subject()
-	g.Expect(ok).To(BeTrue())
-	g.Expect(subject).To(Equal(expectedSubject))
-
-	audiences, ok := token.Audience()
-	g.Expect(ok).To(BeTrue())
-	g.Expect(audiences).To(HaveLen(1))
-	g.Expect(audiences[0]).To(Equal(expectedAudience))
-
-	exp, ok := token.Expiration()
-	g.Expect(ok).To(BeTrue())
-	g.Expect(exp).To(BeTemporally(">=", time.Now()))
-
-	nbf, ok := token.NotBefore()
-	g.Expect(ok).To(BeTrue())
-	g.Expect(nbf).To(BeTemporally("<=", time.Now().Add(time.Minute)))
-
-	iat, ok := token.IssuedAt()
-	g.Expect(ok).To(BeTrue())
-	g.Expect(iat).To(BeTemporally("<=", time.Now().Add(time.Minute)))
-
-	jti, ok := token.JwtID()
-	g.Expect(ok).To(BeTrue())
-	g.Expect(jti).ToNot(BeEmpty())
-}
-
-func newMockTokenServer() *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]any{
-			"access_token": "test-access-token",
-			"token_type":   "Bearer",
-		})
-	}))
-}
 
 func TestAuthenticate(t *testing.T) {
 	tests := []struct {
@@ -326,7 +81,7 @@ func TestAuthenticate(t *testing.T) {
 			bearerToken := tt.bearerToken
 			if tt.useValidToken {
 				// Issue a valid token for this test
-				validToken, _, err := tokenIssuer.issue("https://example.com", "test-user", "https://example.com", time.Now(), nil, nil)
+				validToken, _, err := tokenIssuer.Issue("https://example.com", "test-user", "https://example.com", time.Now(), nil, nil)
 				g.Expect(err).ToNot(HaveOccurred())
 				bearerToken = validToken
 			}
@@ -1196,11 +951,11 @@ func TestCallback(t *testing.T) {
 			}
 
 			// Setup token issuer with potential error
-			var keySource privateKeySource
+			var issueErr error
 			if tt.issueError {
-				keySource = &mockPrivateKeySource{currentError: errors.New("key generation failed")}
+				issueErr = errors.New("key generation failed")
 			}
-			tokenIssuer := newTestTokenIssuer(keySource)
+			tokenIssuer := newTestTokenIssuer(issueErr)
 			api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
 
 			// For successful callback test, we need the session key to match the cookie value
@@ -1219,11 +974,11 @@ func TestCallback(t *testing.T) {
 				if tt.retrieveError {
 					sessionStore = &mockSessionStore{sessionStore: sessionStore, retrieveError: true}
 					// Need to recreate API with updated session store
-					var keySource privateKeySource
+					var issueErr error
 					if tt.issueError {
-						keySource = &mockPrivateKeySource{currentError: errors.New("key generation failed")}
+						issueErr = errors.New("key generation failed")
 					}
-					tokenIssuer = newTestTokenIssuer(keySource)
+					tokenIssuer = newTestTokenIssuer(issueErr)
 					api = newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
 				}
 			} else {
@@ -1327,7 +1082,7 @@ func TestToken(t *testing.T) {
 				now := time.Now()
 				var exp time.Time
 				var err error
-				jwtToken, exp, err = tokenIssuer.issue("https://example.com", "test-user@example.com", "mcp-oauth2-proxy", now, nil, nil)
+				jwtToken, exp, err = tokenIssuer.Issue("https://example.com", "test-user@example.com", "mcp-oauth2-proxy", now, nil, nil)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				// Create outcome with real JWT token
@@ -1368,7 +1123,7 @@ func TestToken(t *testing.T) {
 				g.Expect(response["expiry"]).ToNot(BeNil())
 
 				// Parse and validate JWT claims - use the same tokenIssuer's public keys
-				publicKeys := tokenIssuer.publicKeys(time.Now())
+				publicKeys := tokenIssuer.PublicKeys(time.Now())
 				g.Expect(publicKeys).To(HaveLen(1))
 				token := parseJWT(g, jwtToken, publicKeys[0])
 
@@ -1406,7 +1161,7 @@ func TestOpenIDConfiguration(t *testing.T) {
 	signingAlgs, ok := response["id_token_signing_alg_values_supported"].([]any)
 	g.Expect(ok).To(BeTrue())
 	g.Expect(signingAlgs).To(HaveLen(1))
-	g.Expect(signingAlgs[0]).To(Equal(issuerAlgorithm().String()))
+	g.Expect(signingAlgs[0]).To(Equal(issuer.Algorithm().String()))
 }
 
 func TestJWKS(t *testing.T) {
@@ -1442,7 +1197,7 @@ func TestJWKS(t *testing.T) {
 
 	// Check if optional fields are present
 	if alg, exists := key["alg"]; exists {
-		g.Expect(alg).To(Equal(issuerAlgorithm().String()))
+		g.Expect(alg).To(Equal(issuer.Algorithm().String()))
 	}
 
 	// Verify we can recreate the same public key from the JWK response
@@ -1459,4 +1214,305 @@ func TestJWKS(t *testing.T) {
 	if origExists && reconExists {
 		g.Expect(reconKeyID).To(Equal(origKeyID))
 	}
+}
+
+// createMockMCPServer creates a test MCP server with scopes metadata
+func createMockMCPServer(scopes []config.ScopeConfig) *httptest.Server {
+	mcpServer := server.NewMCPServer("test-mcp-server", "1.0.0",
+		server.WithToolCapabilities(true),
+		server.WithHooks(&server.Hooks{
+			OnAfterListTools: []server.OnAfterListToolsFunc{
+				func(ctx context.Context, id any, message *mcp.ListToolsRequest, result *mcp.ListToolsResult) {
+					// Add scopes to the metadata
+					if result.Meta == nil {
+						result.Meta = &mcp.Meta{
+							AdditionalFields: make(map[string]any),
+						}
+					}
+					result.Meta.AdditionalFields["scopes"] = scopes
+				},
+			},
+		}),
+	)
+
+	// Create and return the test server
+	return server.NewTestStreamableHTTPServer(mcpServer)
+}
+
+// mockProvider implements the provider interface for testing
+type mockProvider struct {
+	oauth2ConfigFunc func() *oauth2.Config
+	verifyUserResult *provider.UserInfo
+	verifyUserError  error
+}
+
+func (m *mockProvider) OAuth2Config() *oauth2.Config {
+	if m.oauth2ConfigFunc != nil {
+		return m.oauth2ConfigFunc()
+	}
+	return &oauth2.Config{
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  "https://example.com/auth",
+			TokenURL: "https://example.com/token",
+		},
+	}
+}
+
+func (m *mockProvider) VerifyUser(ctx context.Context, ts oauth2.TokenSource) (*provider.UserInfo, error) {
+	if m.verifyUserError != nil {
+		return nil, m.verifyUserError
+	}
+	if m.verifyUserResult != nil {
+		return m.verifyUserResult, nil
+	}
+	return &provider.UserInfo{Username: "test-user@example.com"}, nil
+}
+
+// mockSessionStore allows simulating sessionStore failures
+type mockSessionStore struct {
+	sessionStore
+	storeError            error
+	storeTransactionError error
+	retrieveError         bool
+}
+
+func (m *mockSessionStore) store(s *session) (string, error) {
+	if m.storeError != nil {
+		return "", m.storeError
+	}
+	return m.sessionStore.store(s)
+}
+
+func (m *mockSessionStore) storeTransaction(tx *transaction) (string, error) {
+	if m.storeTransactionError != nil {
+		return "", m.storeTransactionError
+	}
+	return m.sessionStore.storeTransaction(tx)
+}
+
+func (m *mockSessionStore) retrieve(key string) (*session, bool) {
+	if m.retrieveError {
+		return nil, false
+	}
+	return m.sessionStore.retrieve(key)
+}
+
+func (m *mockSessionStore) retrieveTransaction(key string) (*transaction, bool) {
+	if m.retrieveError {
+		return nil, false
+	}
+	return m.sessionStore.retrieveTransaction(key)
+}
+
+func newTestConfig() *config.Config {
+	return &config.Config{
+		Provider: config.ProviderConfig{
+			ClientID:     "test-client-id",
+			ClientSecret: "test-client-secret",
+		},
+		Proxy: config.ProxyConfig{
+			Hosts: []*config.HostConfig{
+				{
+					Host: "example.com",
+				},
+				{
+					Host: "other.example.com",
+				},
+			},
+		},
+		Server: config.ServerConfig{
+			Addr: "localhost:8080",
+		},
+	}
+}
+
+func setupConfig(g *WithT, conf *config.Config) *config.Config {
+	if conf == nil {
+		conf = newTestConfig()
+	}
+	conf.Provider.Name = "mock"
+	err := conf.ValidateAndInitialize()
+	g.Expect(err).ToNot(HaveOccurred())
+	return conf
+}
+
+func parseJSONResponse(g *WithT, body []byte) map[string]any {
+	var response map[string]any
+	err := json.Unmarshal(body, &response)
+	g.Expect(err).ToNot(HaveOccurred())
+	return response
+}
+
+func newTestTransaction() *transaction {
+	return &transaction{
+		clientParams: transactionClientParams{
+			codeChallenge: pkceS256Challenge("test-verifier"),
+			redirectURL:   "https://example.com/callback",
+			state:         "test-state",
+		},
+		codeVerifier: "test-verifier",
+		host:         "example.com",
+	}
+}
+
+// mockIssuer implements the issuer.Issuer interface for testing
+type mockIssuer struct {
+	issueFunc      func(iss, sub, aud string, now time.Time, groups, scopes []string) (string, time.Time, error)
+	verifyFunc     func(bearerToken string, now time.Time, iss, aud string) bool
+	publicKeysFunc func(now time.Time) []jwk.Key
+	privateKey     jwk.Key
+	publicKey      jwk.Key
+}
+
+func (m *mockIssuer) Issue(iss, sub, aud string, now time.Time, groups, scopes []string) (string, time.Time, error) {
+	if m.issueFunc != nil {
+		return m.issueFunc(iss, sub, aud, now, groups, scopes)
+	}
+	// Default implementation using the test keys
+	if m.privateKey == nil {
+		return "", time.Time{}, errors.New("no private key configured")
+	}
+
+	exp := now.Add(time.Hour)
+	tok, err := jwt.NewBuilder().
+		Issuer(iss).
+		Subject(sub).
+		Audience([]string{aud}).
+		IssuedAt(now).
+		NotBefore(now).
+		Expiration(exp).
+		JwtID("test-jwt-id").
+		Build()
+	if err != nil {
+		return "", time.Time{}, err
+	}
+
+	b, err := jwt.Sign(tok, jwt.WithKey(issuer.Algorithm(), m.privateKey))
+	if err != nil {
+		return "", time.Time{}, err
+	}
+
+	return string(b), exp, nil
+}
+
+func (m *mockIssuer) Verify(bearerToken string, now time.Time, iss, aud string) bool {
+	if m.verifyFunc != nil {
+		return m.verifyFunc(bearerToken, now, iss, aud)
+	}
+	// Default implementation using the test public key
+	if m.publicKey == nil {
+		return false
+	}
+
+	_, err := jwt.Parse([]byte(bearerToken),
+		jwt.WithKey(issuer.Algorithm(), m.publicKey),
+		jwt.WithIssuer(iss),
+		jwt.WithAudience(aud),
+		jwt.WithValidate(true))
+	return err == nil
+}
+
+func (m *mockIssuer) PublicKeys(now time.Time) []jwk.Key {
+	if m.publicKeysFunc != nil {
+		return m.publicKeysFunc(now)
+	}
+	if m.publicKey != nil {
+		return []jwk.Key{m.publicKey}
+	}
+	return nil
+}
+
+func newTestTokenIssuer(issueError error) issuer.Issuer {
+	// Create a working test issuer with the same key for signing and verifying
+	priv, _ := rsa.GenerateKey(rand.Reader, 2048)
+	privateKey, _ := jwk.Import(priv)
+	publicKey, _ := privateKey.PublicKey()
+
+	// Add key ID to both keys
+	thumbprint, _ := publicKey.Thumbprint(crypto.SHA256)
+	keyID := fmt.Sprintf("%x", thumbprint)
+	privateKey.Set(jwk.KeyIDKey, keyID)
+	publicKey.Set(jwk.KeyIDKey, keyID)
+
+	mock := &mockIssuer{
+		privateKey: privateKey,
+		publicKey:  publicKey,
+	}
+
+	if issueError != nil {
+		mock.issueFunc = func(iss, sub, aud string, now time.Time, groups, scopes []string) (string, time.Time, error) {
+			return "", time.Time{}, issueError
+		}
+	}
+
+	return mock
+}
+
+// newTestTokenIssuerWithSharedKeys creates a token issuer that uses the same keys for all tests
+func newTestTokenIssuerWithSharedKeys() (issuer.Issuer, jwk.Key, jwk.Key) {
+	priv, _ := rsa.GenerateKey(rand.Reader, 2048)
+	privateKey, _ := jwk.Import(priv)
+	publicKey, _ := privateKey.PublicKey()
+
+	// Add key ID to both keys
+	thumbprint, _ := publicKey.Thumbprint(crypto.SHA256)
+	keyID := fmt.Sprintf("%x", thumbprint)
+	privateKey.Set(jwk.KeyIDKey, keyID)
+	publicKey.Set(jwk.KeyIDKey, keyID)
+
+	mock := &mockIssuer{
+		privateKey: privateKey,
+		publicKey:  publicKey,
+	}
+	return mock, privateKey, publicKey
+}
+
+// parseJWT parses and validates a JWT token using the given public key
+func parseJWT(g *WithT, tokenString string, publicKey jwk.Key) jwt.Token {
+	token, err := jwt.Parse([]byte(tokenString), jwt.WithKey(issuer.Algorithm(), publicKey), jwt.WithValidate(true))
+	g.Expect(err).ToNot(HaveOccurred())
+	return token
+}
+
+// assertJWTClaims verifies standard JWT claims
+func assertJWTClaims(g *WithT, token jwt.Token, expectedIssuer, expectedSubject, expectedAudience string) {
+	issuer, ok := token.Issuer()
+	g.Expect(ok).To(BeTrue())
+	g.Expect(issuer).To(Equal(expectedIssuer))
+
+	subject, ok := token.Subject()
+	g.Expect(ok).To(BeTrue())
+	g.Expect(subject).To(Equal(expectedSubject))
+
+	audiences, ok := token.Audience()
+	g.Expect(ok).To(BeTrue())
+	g.Expect(audiences).To(HaveLen(1))
+	g.Expect(audiences[0]).To(Equal(expectedAudience))
+
+	exp, ok := token.Expiration()
+	g.Expect(ok).To(BeTrue())
+	g.Expect(exp).To(BeTemporally(">=", time.Now()))
+
+	nbf, ok := token.NotBefore()
+	g.Expect(ok).To(BeTrue())
+	g.Expect(nbf).To(BeTemporally("<=", time.Now().Add(time.Minute)))
+
+	iat, ok := token.IssuedAt()
+	g.Expect(ok).To(BeTrue())
+	g.Expect(iat).To(BeTemporally("<=", time.Now().Add(time.Minute)))
+
+	jti, ok := token.JwtID()
+	g.Expect(ok).To(BeTrue())
+	g.Expect(jti).ToNot(BeEmpty())
+}
+
+func newMockTokenServer() *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]any{
+			"access_token": "test-access-token",
+			"token_type":   "Bearer",
+		})
+	}))
 }

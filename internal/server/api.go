@@ -11,6 +11,7 @@ import (
 
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/constants"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/issuer"
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/logging"
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/provider"
 )
@@ -32,7 +33,7 @@ const (
 	pathJWKS                = "/openid/v1/jwks"
 )
 
-func newAPI(ti *tokenIssuer, p provider.Interface, conf *config.Config,
+func newAPI(ti issuer.Issuer, p provider.Interface, conf *config.Config,
 	sessionStore sessionStore, nowFunc func() time.Time) http.Handler {
 
 	mux := http.NewServeMux()
@@ -42,7 +43,7 @@ func newAPI(ti *tokenIssuer, p provider.Interface, conf *config.Config,
 
 		iss := baseURL(r)
 		aud := baseURL(r)
-		if !ti.verify(token, nowFunc(), iss, aud) {
+		if !ti.Verify(token, nowFunc(), iss, aud) {
 			respondWWWAuthenticate(w, r)
 			return
 		}
@@ -219,7 +220,7 @@ func newAPI(ti *tokenIssuer, p provider.Interface, conf *config.Config,
 		now := nowFunc()
 		groups := user.Groups
 		scopes := tx.clientParams.scopes
-		accessToken, exp, err := ti.issue(iss, sub, aud, now, groups, scopes)
+		accessToken, exp, err := ti.Issue(iss, sub, aud, now, groups, scopes)
 		if err != nil {
 			l.WithError(err).Error("failed to issue access token")
 			http.Error(w, "Failed to issue access token", http.StatusInternalServerError)
@@ -288,13 +289,13 @@ func newAPI(ti *tokenIssuer, p provider.Interface, conf *config.Config,
 		respondJSON(w, r, http.StatusOK, map[string]any{
 			"issuer":                                baseURL(r),
 			"jwks_uri":                              jwksURL(r),
-			"id_token_signing_alg_values_supported": []string{issuerAlgorithm().String()},
+			"id_token_signing_alg_values_supported": []string{issuer.Algorithm().String()},
 		})
 	})
 
 	mux.HandleFunc(pathJWKS, func(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, r, http.StatusOK, map[string]any{
-			"keys": ti.publicKeys(time.Now()),
+			"keys": ti.PublicKeys(time.Now()),
 		})
 	})
 

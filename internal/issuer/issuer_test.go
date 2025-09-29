@@ -1,9 +1,11 @@
-package server
+package issuer
 
 import (
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -13,7 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestTokenIssuer_issue(t *testing.T) {
+func TestIssuer_Issue(t *testing.T) {
 	tests := []struct {
 		name          string
 		issuer        string
@@ -77,7 +79,7 @@ func TestTokenIssuer_issue(t *testing.T) {
 
 			now := time.Now()
 
-			tokenString, exp, err := tokenIssuer.issue(tt.issuer, tt.subject, tt.audience, now, nil, tt.scopes)
+			tokenString, exp, err := tokenIssuer.Issue(tt.issuer, tt.subject, tt.audience, now, nil, tt.scopes)
 
 			if tt.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
@@ -141,7 +143,7 @@ func TestTokenIssuer_issue(t *testing.T) {
 	}
 }
 
-func TestTokenIssuer_verify(t *testing.T) {
+func TestIssuer_Verify(t *testing.T) {
 	tests := []struct {
 		name          string
 		setupToken    func(ti *tokenIssuer, now time.Time) string
@@ -153,7 +155,7 @@ func TestTokenIssuer_verify(t *testing.T) {
 		{
 			name: "valid token",
 			setupToken: func(ti *tokenIssuer, now time.Time) string {
-				token, _, err := ti.issue("https://example.com", "user@example.com", "mcp-oauth2-proxy", now, nil, nil)
+				token, _, err := ti.Issue("https://example.com", "user@example.com", "mcp-oauth2-proxy", now, nil, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -186,7 +188,7 @@ func TestTokenIssuer_verify(t *testing.T) {
 			setupToken: func(ti *tokenIssuer, now time.Time) string {
 				// Issue token in the past
 				pastTime := now.Add(-2 * issuerTokenDuration)
-				token, _, err := ti.issue("https://example.com", "user@example.com", "mcp-oauth2-proxy", pastTime, nil, nil)
+				token, _, err := ti.Issue("https://example.com", "user@example.com", "mcp-oauth2-proxy", pastTime, nil, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -213,7 +215,7 @@ func TestTokenIssuer_verify(t *testing.T) {
 					JwtID(uuid.NewString()).
 					Build()
 
-				b, _ := jwt.Sign(tok, jwt.WithKey(issuerAlgorithm(), wrongKey))
+				b, _ := jwt.Sign(tok, jwt.WithKey(Algorithm(), wrongKey))
 				return string(b)
 			},
 			iss:           "https://example.com",
@@ -235,7 +237,7 @@ func TestTokenIssuer_verify(t *testing.T) {
 		{
 			name: "wrong issuer",
 			setupToken: func(ti *tokenIssuer, now time.Time) string {
-				token, _, err := ti.issue("https://wrong-issuer.com", "user@example.com", "mcp-oauth2-proxy", now, nil, nil)
+				token, _, err := ti.Issue("https://wrong-issuer.com", "user@example.com", "mcp-oauth2-proxy", now, nil, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -248,7 +250,7 @@ func TestTokenIssuer_verify(t *testing.T) {
 		{
 			name: "wrong audience",
 			setupToken: func(ti *tokenIssuer, now time.Time) string {
-				token, _, err := ti.issue("https://example.com", "user@example.com", "wrong-audience", now, nil, nil)
+				token, _, err := ti.Issue("https://example.com", "user@example.com", "wrong-audience", now, nil, nil)
 				if err != nil {
 					panic(err)
 				}
@@ -273,7 +275,7 @@ func TestTokenIssuer_verify(t *testing.T) {
 					Build()
 
 				cur, _ := ti.current(now)
-				b, _ := jwt.Sign(tok, jwt.WithKey(issuerAlgorithm(), cur))
+				b, _ := jwt.Sign(tok, jwt.WithKey(Algorithm(), cur))
 				return string(b)
 			},
 			iss:           "https://example.com",
@@ -294,7 +296,7 @@ func TestTokenIssuer_verify(t *testing.T) {
 					Build()
 
 				cur, _ := ti.current(now)
-				b, _ := jwt.Sign(tok, jwt.WithKey(issuerAlgorithm(), cur))
+				b, _ := jwt.Sign(tok, jwt.WithKey(Algorithm(), cur))
 				return string(b)
 			},
 			iss:           "https://example.com",
@@ -315,7 +317,7 @@ func TestTokenIssuer_verify(t *testing.T) {
 					Build()
 
 				cur, _ := ti.current(now)
-				b, _ := jwt.Sign(tok, jwt.WithKey(issuerAlgorithm(), cur))
+				b, _ := jwt.Sign(tok, jwt.WithKey(Algorithm(), cur))
 				return string(b)
 			},
 			iss:           "https://example.com",
@@ -336,7 +338,7 @@ func TestTokenIssuer_verify(t *testing.T) {
 					Build()
 
 				cur, _ := ti.current(now)
-				b, _ := jwt.Sign(tok, jwt.WithKey(issuerAlgorithm(), cur))
+				b, _ := jwt.Sign(tok, jwt.WithKey(Algorithm(), cur))
 				return string(b)
 			},
 			iss:           "https://example.com",
@@ -360,7 +362,7 @@ func TestTokenIssuer_verify(t *testing.T) {
 			now := time.Now()
 
 			token := tt.setupToken(ti, now)
-			isValid := ti.verify(token, now, tt.iss, tt.aud)
+			isValid := ti.Verify(token, now, tt.iss, tt.aud)
 
 			g.Expect(isValid).To(Equal(tt.expectedValid))
 		})
@@ -649,12 +651,65 @@ func TestAutomaticPrivateKeySource_publicKeys(t *testing.T) {
 func TestNewTokenIssuer(t *testing.T) {
 	g := NewWithT(t)
 
-	issuer := newTokenIssuer()
+	issuer := New()
+	ti := issuer.(*tokenIssuer)
 
-	g.Expect(issuer).ToNot(BeNil())
-	g.Expect(issuer.privateKeySource).ToNot(BeNil())
+	g.Expect(ti).ToNot(BeNil())
+	g.Expect(ti.privateKeySource).ToNot(BeNil())
 
 	// Should be an automaticPrivateKeySource
-	_, ok := issuer.privateKeySource.(*automaticPrivateKeySource)
+	_, ok := ti.privateKeySource.(*automaticPrivateKeySource)
 	g.Expect(ok).To(BeTrue())
+}
+
+// mockPrivateKeySource implements the privateKeySource interface for testing
+type mockPrivateKeySource struct {
+	currentError  error
+	privateKey    jwk.Key
+	publicKeyList []jwk.Key
+}
+
+func (m *mockPrivateKeySource) current(now time.Time) (private jwk.Key, err error) {
+	if m.currentError != nil {
+		return nil, m.currentError
+	}
+	defer func() {
+		public, _ := private.PublicKey()
+		thumbprint, _ := public.Thumbprint(crypto.SHA256)
+		keyID := fmt.Sprintf("%x", thumbprint)
+		private.Set(jwk.KeyIDKey, keyID)
+		public.Set(jwk.KeyIDKey, keyID)
+	}()
+	if m.privateKey != nil {
+		return m.privateKey, nil
+	}
+	// Generate a test key if none provided
+	priv, _ := rsa.GenerateKey(rand.Reader, 2048)
+	private, _ = jwk.Import(priv)
+	return private, nil
+}
+
+func (m *mockPrivateKeySource) publicKeys(now time.Time) []jwk.Key {
+	return m.publicKeyList
+}
+
+func newTestTokenIssuer(keySource privateKeySource) *tokenIssuer {
+	if keySource == nil {
+		// Create a working test key source with the same key for signing and verifying
+		priv, _ := rsa.GenerateKey(rand.Reader, 2048)
+		privateKey, _ := jwk.Import(priv)
+		publicKey, _ := privateKey.PublicKey()
+		keySource = &mockPrivateKeySource{
+			privateKey:    privateKey,
+			publicKeyList: []jwk.Key{publicKey},
+		}
+	}
+	return &tokenIssuer{keySource}
+}
+
+// parseJWT parses and validates a JWT token using the given public key
+func parseJWT(g *WithT, tokenString string, publicKey jwk.Key) jwt.Token {
+	token, err := jwt.Parse([]byte(tokenString), jwt.WithKey(Algorithm(), publicKey), jwt.WithValidate(true))
+	g.Expect(err).ToNot(HaveOccurred())
+	return token
 }
