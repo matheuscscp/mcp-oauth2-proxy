@@ -3,11 +3,12 @@ package server
 import (
 	"fmt"
 	"net/http"
+
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 )
 
 const (
-	stateCookieName   = "csrf-state"
-	stateCookieMaxAge = 60 // 1 minute
+	stateCookieName = "csrf-state"
 )
 
 func setState(w http.ResponseWriter, state string) {
@@ -15,7 +16,7 @@ func setState(w http.ResponseWriter, state string) {
 		Name:     stateCookieName,
 		Value:    state,
 		Path:     pathCallback,
-		MaxAge:   stateCookieMaxAge,
+		MaxAge:   int(config.TransactionTimeout.Seconds()),
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,

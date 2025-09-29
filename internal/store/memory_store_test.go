@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 	. "github.com/onsi/gomega"
 	"golang.org/x/oauth2"
 )
@@ -136,7 +137,7 @@ func TestMemoryStore_Store(t *testing.T) {
 			// Verify expiration was set
 			storedSession := store.sessions[sessionKey(key)]
 			g.Expect(storedSession.expiresAt).To(BeTemporally(">", time.Now()))
-			g.Expect(storedSession.expiresAt).To(BeTemporally("~", time.Now().Add(timeout), time.Second))
+			g.Expect(storedSession.expiresAt).To(BeTemporally("~", time.Now().Add(config.TransactionTimeout), time.Second))
 		})
 	}
 }
