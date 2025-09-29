@@ -1,4 +1,4 @@
-package server
+package issuer
 
 import (
 	"crypto"
@@ -21,8 +21,14 @@ const (
 )
 
 var (
-	issuerAlgorithm = jwa.RS256
+	Algorithm = jwa.RS256
 )
+
+type Issuer interface {
+	Issue(iss, sub, aud string, now time.Time, groups, scopes []string) (string, time.Time, error)
+	Verify(bearerToken string, now time.Time, iss, aud string) bool
+	PublicKeys(now time.Time) []jwk.Key
+}
 
 type tokenIssuer struct{ privateKeySource }
 
@@ -52,11 +58,11 @@ func (s *signingKey) expiredForVerifyingTokens(now time.Time) bool {
 	return s == nil || s.deadline.Add(issuerTokenDuration).Before(now)
 }
 
-func newTokenIssuer() *tokenIssuer {
+func New() Issuer {
 	return &tokenIssuer{&automaticPrivateKeySource{}}
 }
 
-func (t *tokenIssuer) issue(iss, sub, aud string, now time.Time, groups, scopes []string) (string, time.Time, error) {
+func (t *tokenIssuer) Issue(iss, sub, aud string, now time.Time, groups, scopes []string) (string, time.Time, error) {
 	cur, err := t.current(now)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("failed to get current private key: %w", err)
@@ -86,7 +92,7 @@ func (t *tokenIssuer) issue(iss, sub, aud string, now time.Time, groups, scopes 
 		return "", time.Time{}, fmt.Errorf("failed to build token: %w", err)
 	}
 
-	b, err := jwt.Sign(tok, jwt.WithKey(issuerAlgorithm(), cur))
+	b, err := jwt.Sign(tok, jwt.WithKey(Algorithm(), cur))
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("failed to sign token: %w", err)
 	}
@@ -105,11 +111,11 @@ func (t *tokenIssuer) issue(iss, sub, aud string, now time.Time, groups, scopes 
 	return signedJWT, exp, nil
 }
 
-func (t *tokenIssuer) verify(bearerToken string, now time.Time, iss, aud string) bool {
+func (t *tokenIssuer) Verify(bearerToken string, now time.Time, iss, aud string) bool {
 	for _, key := range t.publicKeys(now) {
 
 		token, err := jwt.ParseString(bearerToken,
-			jwt.WithKey(issuerAlgorithm(), key),
+			jwt.WithKey(Algorithm(), key),
 			jwt.WithIssuer(iss),
 			jwt.WithAudience(aud))
 		if err != nil {
@@ -123,6 +129,10 @@ func (t *tokenIssuer) verify(bearerToken string, now time.Time, iss, aud string)
 		return true
 	}
 	return false
+}
+
+func (t *tokenIssuer) PublicKeys(now time.Time) []jwk.Key {
+	return t.publicKeys(now)
 }
 
 func (a *automaticPrivateKeySource) current(now time.Time) (jwk.Key, error) {
