@@ -1,4 +1,4 @@
-package server
+package store
 
 import (
 	"fmt"
@@ -9,10 +9,10 @@ import (
 	"golang.org/x/oauth2"
 )
 
-func TestNewMemorySessionStore(t *testing.T) {
+func TestNewMemoryStore(t *testing.T) {
 	g := NewWithT(t)
 
-	store := newMemorySessionStore()
+	store := NewMemoryStore()
 
 	g.Expect(store).ToNot(BeNil())
 	g.Expect(store.sessions).ToNot(BeNil())
@@ -20,30 +20,30 @@ func TestNewMemorySessionStore(t *testing.T) {
 	g.Expect(store.evictionQueue).To(BeEmpty())
 }
 
-func TestMemorySessionStore_StoreTransaction(t *testing.T) {
+func TestMemoryStore_StoreTransaction(t *testing.T) {
 	tests := []struct {
 		name        string
-		transaction *transaction
+		transaction *Transaction
 	}{
 		{
 			name: "store valid transaction",
-			transaction: &transaction{
-				clientParams: transactionClientParams{
-					codeChallenge: "test-challenge",
-					redirectURL:   "http://localhost:8080/callback",
-					scopes:        []string{"read", "write"},
-					state:         "test-state",
+			transaction: &Transaction{
+				ClientParams: TransactionClientParams{
+					CodeChallenge: "test-challenge",
+					RedirectURL:   "http://localhost:8080/callback",
+					Scopes:        []string{"read", "write"},
+					State:         "test-state",
 				},
-				codeVerifier: "test-verifier",
-				host:         "example.com",
+				CodeVerifier: "test-verifier",
+				Host:         "example.com",
 			},
 		},
 		{
 			name: "store transaction with empty fields",
-			transaction: &transaction{
-				clientParams: transactionClientParams{},
-				codeVerifier: "",
-				host:         "",
+			transaction: &Transaction{
+				ClientParams: TransactionClientParams{},
+				CodeVerifier: "",
+				Host:         "",
 			},
 		},
 	}
@@ -51,9 +51,9 @@ func TestMemorySessionStore_StoreTransaction(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			store := newMemorySessionStore()
+			store := NewMemoryStore()
 
-			key, err := store.storeTransaction(tt.transaction)
+			key, err := store.StoreTransaction(tt.transaction)
 
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(key).ToNot(BeEmpty())
@@ -64,37 +64,37 @@ func TestMemorySessionStore_StoreTransaction(t *testing.T) {
 			g.Expect(store.evictionQueue).To(HaveLen(1))
 
 			// Verify we can retrieve the transaction
-			retrievedTx, ok := store.retrieveTransaction(key)
+			retrievedTx, ok := store.RetrieveTransaction(key)
 			g.Expect(ok).To(BeTrue())
 			g.Expect(retrievedTx).To(Equal(tt.transaction))
 		})
 	}
 }
 
-func TestMemorySessionStore_Store(t *testing.T) {
+func TestMemoryStore_Store(t *testing.T) {
 	tests := []struct {
 		name    string
-		session *session
+		session *Session
 	}{
 		{
 			name: "store session with transaction",
-			session: &session{
-				tx: &transaction{
-					clientParams: transactionClientParams{
-						codeChallenge: "test-challenge",
-						redirectURL:   "http://localhost:8080/callback",
-						scopes:        []string{"read"},
-						state:         "test-state",
+			session: &Session{
+				TX: &Transaction{
+					ClientParams: TransactionClientParams{
+						CodeChallenge: "test-challenge",
+						RedirectURL:   "http://localhost:8080/callback",
+						Scopes:        []string{"read"},
+						State:         "test-state",
 					},
-					codeVerifier: "test-verifier",
-					host:         "example.com",
+					CodeVerifier: "test-verifier",
+					Host:         "example.com",
 				},
 			},
 		},
 		{
 			name: "store session with OAuth2 token",
-			session: &session{
-				outcome: &oauth2.Token{
+			session: &Session{
+				Outcome: &oauth2.Token{
 					AccessToken:  "access-token",
 					TokenType:    "Bearer",
 					RefreshToken: "refresh-token",
@@ -104,14 +104,14 @@ func TestMemorySessionStore_Store(t *testing.T) {
 		},
 		{
 			name: "store session with both transaction and token",
-			session: &session{
-				tx: &transaction{
-					clientParams: transactionClientParams{
-						state: "test-state",
+			session: &Session{
+				TX: &Transaction{
+					ClientParams: TransactionClientParams{
+						State: "test-state",
 					},
-					host: "example.com",
+					Host: "example.com",
 				},
-				outcome: &oauth2.Token{
+				Outcome: &oauth2.Token{
 					AccessToken: "access-token",
 					TokenType:   "Bearer",
 				},
@@ -122,9 +122,9 @@ func TestMemorySessionStore_Store(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			store := newMemorySessionStore()
+			store := NewMemoryStore()
 
-			key, err := store.store(tt.session)
+			key, err := store.StoreSession(tt.session)
 
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(key).ToNot(BeEmpty())
@@ -136,23 +136,23 @@ func TestMemorySessionStore_Store(t *testing.T) {
 			// Verify expiration was set
 			storedSession := store.sessions[sessionKey(key)]
 			g.Expect(storedSession.expiresAt).To(BeTemporally(">", time.Now()))
-			g.Expect(storedSession.expiresAt).To(BeTemporally("~", time.Now().Add(sessionStoreTimeout), time.Second))
+			g.Expect(storedSession.expiresAt).To(BeTemporally("~", time.Now().Add(timeout), time.Second))
 		})
 	}
 }
 
-func TestMemorySessionStore_StoreUniqueKeys(t *testing.T) {
+func TestMemoryStore_StoreUniqueKeys(t *testing.T) {
 	g := NewWithT(t)
-	store := newMemorySessionStore()
+	store := NewMemoryStore()
 
 	// Store multiple sessions and verify they get unique keys
-	session1 := &session{tx: &transaction{host: "example1.com"}}
-	session2 := &session{tx: &transaction{host: "example2.com"}}
-	session3 := &session{tx: &transaction{host: "example3.com"}}
+	session1 := &Session{TX: &Transaction{Host: "example1.com"}}
+	session2 := &Session{TX: &Transaction{Host: "example2.com"}}
+	session3 := &Session{TX: &Transaction{Host: "example3.com"}}
 
-	key1, err1 := store.store(session1)
-	key2, err2 := store.store(session2)
-	key3, err3 := store.store(session3)
+	key1, err1 := store.StoreSession(session1)
+	key2, err2 := store.StoreSession(session2)
+	key3, err3 := store.StoreSession(session3)
 
 	g.Expect(err1).ToNot(HaveOccurred())
 	g.Expect(err2).ToNot(HaveOccurred())
@@ -168,18 +168,18 @@ func TestMemorySessionStore_StoreUniqueKeys(t *testing.T) {
 	g.Expect(store.evictionQueue).To(HaveLen(3))
 }
 
-func TestMemorySessionStore_MaxSizeEviction(t *testing.T) {
+func TestMemoryStore_MaxSizeEviction(t *testing.T) {
 	g := NewWithT(t)
 
 	const maxSize = 10
-	store := newMemorySessionStore()
+	store := NewMemoryStore()
 	store.maxSize = maxSize
 
 	// Store sessions up to the max size
 	var keys []string
 	for range maxSize {
-		session := &session{tx: &transaction{host: "example.com"}}
-		key, err := store.store(session)
+		session := &Session{TX: &Transaction{Host: "example.com"}}
+		key, err := store.StoreSession(session)
 		g.Expect(err).ToNot(HaveOccurred())
 		keys = append(keys, key)
 	}
@@ -188,8 +188,8 @@ func TestMemorySessionStore_MaxSizeEviction(t *testing.T) {
 	g.Expect(store.evictionQueue).To(HaveLen(maxSize))
 
 	// Store one more session - should evict the oldest
-	extraSession := &session{tx: &transaction{host: "extra.com"}}
-	extraKey, err := store.store(extraSession)
+	extraSession := &Session{TX: &Transaction{Host: "extra.com"}}
+	extraKey, err := store.StoreSession(extraSession)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	// Size should still be at max
@@ -197,16 +197,16 @@ func TestMemorySessionStore_MaxSizeEviction(t *testing.T) {
 	g.Expect(store.evictionQueue).To(HaveLen(maxSize))
 
 	// The oldest session (first one) should be evicted
-	_, ok := store.retrieve(keys[0])
+	_, ok := store.RetrieveSession(keys[0])
 	g.Expect(ok).To(BeFalse())
 
 	// The newest session should be retrievable
-	retrieved, ok := store.retrieve(extraKey)
+	retrieved, ok := store.RetrieveSession(extraKey)
 	g.Expect(ok).To(BeTrue())
-	g.Expect(retrieved.tx.host).To(Equal("extra.com"))
+	g.Expect(retrieved.TX.Host).To(Equal("extra.com"))
 }
 
-func TestMemorySessionStore_RetrieveTransaction(t *testing.T) {
+func TestMemoryStore_RetrieveTransaction(t *testing.T) {
 	tests := []struct {
 		name           string
 		storeFirst     bool
@@ -235,29 +235,29 @@ func TestMemorySessionStore_RetrieveTransaction(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			store := newMemorySessionStore()
+			store := NewMemoryStore()
 
-			originalTx := &transaction{
-				clientParams: transactionClientParams{
-					codeChallenge: "test-challenge",
-					redirectURL:   "http://localhost:8080/callback",
-					scopes:        []string{"read", "write"},
-					state:         "test-state",
+			originalTx := &Transaction{
+				ClientParams: TransactionClientParams{
+					CodeChallenge: "test-challenge",
+					RedirectURL:   "http://localhost:8080/callback",
+					Scopes:        []string{"read", "write"},
+					State:         "test-state",
 				},
-				codeVerifier: "test-verifier",
-				host:         "example.com",
+				CodeVerifier: "test-verifier",
+				Host:         "example.com",
 			}
 
 			var key string
 			if tt.storeFirst {
 				var err error
-				key, err = store.storeTransaction(originalTx)
+				key, err = store.StoreTransaction(originalTx)
 				g.Expect(err).ToNot(HaveOccurred())
 			} else {
 				key = tt.key
 			}
 
-			retrievedTx, ok := store.retrieveTransaction(key)
+			retrievedTx, ok := store.RetrieveTransaction(key)
 
 			g.Expect(ok).To(Equal(tt.expectedResult))
 			if tt.expectedResult {
@@ -271,7 +271,7 @@ func TestMemorySessionStore_RetrieveTransaction(t *testing.T) {
 	}
 }
 
-func TestMemorySessionStore_Retrieve(t *testing.T) {
+func TestMemoryStore_Retrieve(t *testing.T) {
 	tests := []struct {
 		name           string
 		storeFirst     bool
@@ -300,16 +300,16 @@ func TestMemorySessionStore_Retrieve(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			store := newMemorySessionStore()
+			store := NewMemoryStore()
 
-			originalSession := &session{
-				tx: &transaction{
-					clientParams: transactionClientParams{
-						state: "test-state",
+			originalSession := &Session{
+				TX: &Transaction{
+					ClientParams: TransactionClientParams{
+						State: "test-state",
 					},
-					host: "example.com",
+					Host: "example.com",
 				},
-				outcome: &oauth2.Token{
+				Outcome: &oauth2.Token{
 					AccessToken: "access-token",
 					TokenType:   "Bearer",
 				},
@@ -318,18 +318,18 @@ func TestMemorySessionStore_Retrieve(t *testing.T) {
 			var key string
 			if tt.storeFirst {
 				var err error
-				key, err = store.store(originalSession)
+				key, err = store.StoreSession(originalSession)
 				g.Expect(err).ToNot(HaveOccurred())
 			} else {
 				key = tt.key
 			}
 
-			retrievedSession, ok := store.retrieve(key)
+			retrievedSession, ok := store.RetrieveSession(key)
 
 			g.Expect(ok).To(Equal(tt.expectedResult))
 			if tt.expectedResult {
-				g.Expect(retrievedSession.tx).To(Equal(originalSession.tx))
-				g.Expect(retrievedSession.outcome).To(Equal(originalSession.outcome))
+				g.Expect(retrievedSession.TX).To(Equal(originalSession.TX))
+				g.Expect(retrievedSession.Outcome).To(Equal(originalSession.Outcome))
 				// Verify session is removed after retrieval
 				g.Expect(store.sessions).To(BeEmpty())
 			} else {
@@ -339,19 +339,19 @@ func TestMemorySessionStore_Retrieve(t *testing.T) {
 	}
 }
 
-func TestMemorySessionStore_RetrieveRemovesSession(t *testing.T) {
+func TestMemoryStore_RetrieveRemovesSession(t *testing.T) {
 	g := NewWithT(t)
-	store := newMemorySessionStore()
+	store := NewMemoryStore()
 
-	session := &session{tx: &transaction{host: "example.com"}}
-	key, err := store.store(session)
+	session := &Session{TX: &Transaction{Host: "example.com"}}
+	key, err := store.StoreSession(session)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	// Verify session is stored
 	g.Expect(store.sessions).To(HaveLen(1))
 
 	// Retrieve the session
-	retrievedSession, ok := store.retrieve(key)
+	retrievedSession, ok := store.RetrieveSession(key)
 	g.Expect(ok).To(BeTrue())
 	g.Expect(retrievedSession).ToNot(BeNil())
 
@@ -359,39 +359,39 @@ func TestMemorySessionStore_RetrieveRemovesSession(t *testing.T) {
 	g.Expect(store.sessions).To(BeEmpty())
 
 	// Second retrieval should fail
-	_, ok = store.retrieve(key)
+	_, ok = store.RetrieveSession(key)
 	g.Expect(ok).To(BeFalse())
 }
 
-func TestMemorySessionStore_ExpiredSessionRetrieval(t *testing.T) {
+func TestMemoryStore_ExpiredSessionRetrieval(t *testing.T) {
 	g := NewWithT(t)
-	store := newMemorySessionStore()
+	store := NewMemoryStore()
 
-	session := &session{tx: &transaction{host: "example.com"}}
-	key, err := store.store(session)
+	session := &Session{TX: &Transaction{Host: "example.com"}}
+	key, err := store.StoreSession(session)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	// Manually set the session to be expired
 	store.sessions[sessionKey(key)].expiresAt = time.Now().Add(-time.Hour)
 
 	// Retrieval should fail for expired session
-	retrievedSession, ok := store.retrieve(key)
+	retrievedSession, ok := store.RetrieveSession(key)
 	g.Expect(ok).To(BeFalse())
 	g.Expect(retrievedSession).To(BeNil())
 }
 
-func TestMemorySessionStore_CollectGarbage(t *testing.T) {
+func TestMemoryStore_CollectGarbage(t *testing.T) {
 	g := NewWithT(t)
-	store := newMemorySessionStore()
+	store := NewMemoryStore()
 
 	// Store some sessions
-	session1 := &session{tx: &transaction{host: "example1.com"}}
-	session2 := &session{tx: &transaction{host: "example2.com"}}
-	session3 := &session{tx: &transaction{host: "example3.com"}}
+	session1 := &Session{TX: &Transaction{Host: "example1.com"}}
+	session2 := &Session{TX: &Transaction{Host: "example2.com"}}
+	session3 := &Session{TX: &Transaction{Host: "example3.com"}}
 
-	key1, _ := store.store(session1)
-	key2, _ := store.store(session2)
-	key3, _ := store.store(session3)
+	key1, _ := store.StoreSession(session1)
+	key2, _ := store.StoreSession(session2)
+	key3, _ := store.StoreSession(session3)
 
 	g.Expect(store.sessions).To(HaveLen(3))
 	g.Expect(store.evictionQueue).To(HaveLen(3))
@@ -420,9 +420,9 @@ func TestMemorySessionStore_CollectGarbage(t *testing.T) {
 	g.Expect(ok).To(BeFalse())
 }
 
-func TestMemorySessionStore_ConcurrentAccess(t *testing.T) {
+func TestMemoryStore_ConcurrentAccess(t *testing.T) {
 	g := NewWithT(t)
-	store := newMemorySessionStore()
+	store := NewMemoryStore()
 
 	// Test concurrent stores and retrievals
 	const numGoroutines = 10
@@ -434,15 +434,15 @@ func TestMemorySessionStore_ConcurrentAccess(t *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		go func(goroutineID int) {
 			for j := 0; j < numOperations; j++ {
-				session := &session{
-					tx: &transaction{
-						host: "example.com",
-						clientParams: transactionClientParams{
-							state: "test-state",
+				session := &Session{
+					TX: &Transaction{
+						Host: "example.com",
+						ClientParams: TransactionClientParams{
+							State: "test-state",
 						},
 					},
 				}
-				key, err := store.store(session)
+				key, err := store.StoreSession(session)
 				g.Expect(err).ToNot(HaveOccurred())
 				keys[goroutineID*numOperations+j] = key
 			}
@@ -456,7 +456,7 @@ func TestMemorySessionStore_ConcurrentAccess(t *testing.T) {
 	retrieved := 0
 	for _, key := range keys {
 		if key != "" {
-			if _, ok := store.retrieve(key); ok {
+			if _, ok := store.RetrieveSession(key); ok {
 				retrieved++
 			}
 		}
@@ -467,17 +467,17 @@ func TestMemorySessionStore_ConcurrentAccess(t *testing.T) {
 	g.Expect(retrieved).To(BeNumerically(">=", 0))
 }
 
-func TestMemorySessionStore_KeyGeneration(t *testing.T) {
+func TestMemoryStore_KeyGeneration(t *testing.T) {
 	g := NewWithT(t)
-	store := newMemorySessionStore()
+	store := NewMemoryStore()
 
 	// Generate many keys to test for collisions
 	keys := make(map[string]bool)
 	const numKeys = 10000
 
 	for i := 0; i < numKeys; i++ {
-		session := &session{tx: &transaction{host: "example.com"}}
-		key, err := store.store(session)
+		session := &Session{TX: &Transaction{Host: "example.com"}}
+		key, err := store.StoreSession(session)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Verify key is unique
@@ -490,9 +490,9 @@ func TestMemorySessionStore_KeyGeneration(t *testing.T) {
 	}
 }
 
-func TestMemorySessionStore_MaxSessionSize(t *testing.T) {
+func TestMemoryStore_MaxSessionSize(t *testing.T) {
 	g := NewWithT(t)
-	store := newMemorySessionStore()
+	store := NewMemoryStore()
 
 	// Create a large string that will exceed the session size limit
 	largeString := make([]byte, sessionMaxSize+1000)
@@ -501,20 +501,20 @@ func TestMemorySessionStore_MaxSessionSize(t *testing.T) {
 	}
 
 	// Create a session with large data
-	session := &session{
-		tx: &transaction{
-			clientParams: transactionClientParams{
-				codeChallenge: string(largeString),
-				redirectURL:   "http://localhost",
-				state:         "test",
+	session := &Session{
+		TX: &Transaction{
+			ClientParams: TransactionClientParams{
+				CodeChallenge: string(largeString),
+				RedirectURL:   "http://localhost",
+				State:         "test",
 			},
-			codeVerifier: "verifier",
-			host:         "example.com",
+			CodeVerifier: "verifier",
+			Host:         "example.com",
 		},
 	}
 
 	// Attempt to store the oversized session
-	_, err := store.store(session)
+	_, err := store.StoreSession(session)
 
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err.Error()).To(ContainSubstring("session size exceeds maximum"))
@@ -525,26 +525,26 @@ func TestMemorySessionStore_MaxSessionSize(t *testing.T) {
 	g.Expect(store.evictionQueue).To(BeEmpty())
 }
 
-func TestMemorySessionStore_KeyGenerationError(t *testing.T) {
+func TestMemoryStore_KeyGenerationError(t *testing.T) {
 	g := NewWithT(t)
-	store := newMemorySessionStore()
+	store := NewMemoryStore()
 
 	// Inject a key generator that always fails
 	store.generateKey = func() ([32]byte, error) {
 		return [32]byte{}, fmt.Errorf("key generation failed")
 	}
 
-	session := &session{tx: &transaction{host: "example.com"}}
-	_, err := store.store(session)
+	session := &Session{TX: &Transaction{Host: "example.com"}}
+	_, err := store.StoreSession(session)
 
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err.Error()).To(ContainSubstring("failed to generate key for session"))
 	g.Expect(err.Error()).To(ContainSubstring("key generation failed"))
 }
 
-func TestMemorySessionStore_KeyCollisionHandling(t *testing.T) {
+func TestMemoryStore_KeyCollisionHandling(t *testing.T) {
 	g := NewWithT(t)
-	store := newMemorySessionStore()
+	store := NewMemoryStore()
 
 	// Inject a key generator that returns the same key twice, then a different one
 	callCount := 0
@@ -561,14 +561,14 @@ func TestMemorySessionStore_KeyCollisionHandling(t *testing.T) {
 	}
 
 	// Store first session
-	session1 := &session{tx: &transaction{host: "example1.com"}}
-	key1, err := store.store(session1)
+	session1 := &Session{TX: &Transaction{Host: "example1.com"}}
+	key1, err := store.StoreSession(session1)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(key1).ToNot(BeEmpty())
 
 	// Store second session - should handle collision and generate new key
-	session2 := &session{tx: &transaction{host: "example2.com"}}
-	key2, err := store.store(session2)
+	session2 := &Session{TX: &Transaction{Host: "example2.com"}}
+	key2, err := store.StoreSession(session2)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(key2).ToNot(BeEmpty())
 	g.Expect(key2).ToNot(Equal(key1))
@@ -576,46 +576,4 @@ func TestMemorySessionStore_KeyCollisionHandling(t *testing.T) {
 	// Verify both sessions are stored
 	g.Expect(store.sessions).To(HaveLen(2))
 	g.Expect(callCount).To(Equal(3)) // Should have called generator 3 times due to collision
-}
-
-func TestMemorySessionStore_Interface(t *testing.T) {
-	g := NewWithT(t)
-
-	// Verify that memorySessionStore implements sessionStore interface
-	var store sessionStore = newMemorySessionStore()
-	g.Expect(store).ToNot(BeNil())
-
-	// Test all interface methods
-	tx := &transaction{
-		clientParams: transactionClientParams{
-			state: "test-state",
-		},
-		host: "example.com",
-	}
-
-	// Test storeTransaction
-	key, err := store.storeTransaction(tx)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(key).ToNot(BeEmpty())
-
-	// Test retrieveTransaction
-	retrievedTx, ok := store.retrieveTransaction(key)
-	g.Expect(ok).To(BeTrue())
-	g.Expect(retrievedTx).To(Equal(tx))
-
-	// Test store
-	session := &session{
-		outcome: &oauth2.Token{
-			AccessToken: "test-token",
-			TokenType:   "Bearer",
-		},
-	}
-	key2, err := store.store(session)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(key2).ToNot(BeEmpty())
-
-	// Test retrieve
-	retrievedSession, ok := store.retrieve(key2)
-	g.Expect(ok).To(BeTrue())
-	g.Expect(retrievedSession.outcome).To(Equal(session.outcome))
 }

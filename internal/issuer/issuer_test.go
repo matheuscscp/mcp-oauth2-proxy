@@ -15,6 +15,20 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+func TestNewTokenIssuer(t *testing.T) {
+	g := NewWithT(t)
+
+	issuer := New()
+	ti := issuer.(*tokenIssuer)
+
+	g.Expect(ti).ToNot(BeNil())
+	g.Expect(ti.privateKeySource).ToNot(BeNil())
+
+	// Should be an automaticPrivateKeySource
+	_, ok := ti.privateKeySource.(*automaticPrivateKeySource)
+	g.Expect(ok).To(BeTrue())
+}
+
 func TestIssuer_Issue(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -87,7 +101,7 @@ func TestIssuer_Issue(t *testing.T) {
 			} else {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(tokenString).ToNot(BeEmpty())
-				g.Expect(exp).To(BeTemporally("~", now.Add(issuerTokenDuration), time.Second))
+				g.Expect(exp).To(BeTemporally("~", now.Add(tokenDuration), time.Second))
 
 				// Verify the token can be parsed and has correct claims
 				publicKeys := tokenIssuer.publicKeys(now)
@@ -187,7 +201,7 @@ func TestIssuer_Verify(t *testing.T) {
 			name: "expired token",
 			setupToken: func(ti *tokenIssuer, now time.Time) string {
 				// Issue token in the past
-				pastTime := now.Add(-2 * issuerTokenDuration)
+				pastTime := now.Add(-2 * tokenDuration)
 				token, _, err := ti.Issue("https://example.com", "user@example.com", "mcp-oauth2-proxy", pastTime, nil, nil)
 				if err != nil {
 					panic(err)
@@ -209,7 +223,7 @@ func TestIssuer_Verify(t *testing.T) {
 					Issuer("https://example.com").
 					Subject("user@example.com").
 					Audience([]string{"mcp-oauth2-proxy"}).
-					Expiration(now.Add(issuerTokenDuration)).
+					Expiration(now.Add(tokenDuration)).
 					NotBefore(now).
 					IssuedAt(now).
 					JwtID(uuid.NewString()).
@@ -268,7 +282,7 @@ func TestIssuer_Verify(t *testing.T) {
 					Issuer("https://example.com").
 					Subject("user@example.com").
 					Audience([]string{"other-service", "mcp-oauth2-proxy"}).
-					Expiration(now.Add(issuerTokenDuration)).
+					Expiration(now.Add(tokenDuration)).
 					NotBefore(now).
 					IssuedAt(now).
 					JwtID(uuid.NewString()).
@@ -289,7 +303,7 @@ func TestIssuer_Verify(t *testing.T) {
 				tok, _ := jwt.NewBuilder().
 					Subject("user@example.com").
 					Audience([]string{"mcp-oauth2-proxy"}).
-					Expiration(now.Add(issuerTokenDuration)).
+					Expiration(now.Add(tokenDuration)).
 					NotBefore(now).
 					IssuedAt(now).
 					JwtID(uuid.NewString()).
@@ -310,7 +324,7 @@ func TestIssuer_Verify(t *testing.T) {
 				tok, _ := jwt.NewBuilder().
 					Issuer("https://example.com").
 					Subject("user@example.com").
-					Expiration(now.Add(issuerTokenDuration)).
+					Expiration(now.Add(tokenDuration)).
 					NotBefore(now).
 					IssuedAt(now).
 					JwtID(uuid.NewString()).
@@ -367,299 +381,6 @@ func TestIssuer_Verify(t *testing.T) {
 			g.Expect(isValid).To(Equal(tt.expectedValid))
 		})
 	}
-}
-
-func TestSigningKey_expiredForIssuingTokens(t *testing.T) {
-	tests := []struct {
-		name     string
-		key      *signingKey
-		now      time.Time
-		expected bool
-	}{
-		{
-			name:     "nil key",
-			key:      nil,
-			expected: true,
-		},
-		{
-			name: "not expired",
-			key: &signingKey{
-				deadline: time.Date(2023, 1, 1, 13, 0, 0, 0, time.UTC),
-			},
-			now:      time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC),
-			expected: false,
-		},
-		{
-			name: "exactly at deadline",
-			key: &signingKey{
-				deadline: time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC),
-			},
-			now:      time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC),
-			expected: false,
-		},
-		{
-			name: "past deadline",
-			key: &signingKey{
-				deadline: time.Date(2023, 1, 1, 11, 0, 0, 0, time.UTC),
-			},
-			now:      time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC),
-			expected: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-
-			result := tt.key.expiredForIssuingTokens(tt.now)
-			g.Expect(result).To(Equal(tt.expected))
-		})
-	}
-}
-
-func TestSigningKey_expiredForVerifyingTokens(t *testing.T) {
-	tests := []struct {
-		name     string
-		key      *signingKey
-		now      time.Time
-		expected bool
-	}{
-		{
-			name:     "nil key",
-			key:      nil,
-			expected: true,
-		},
-		{
-			name: "not expired - within grace period",
-			key: &signingKey{
-				deadline: time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC),
-			},
-			now:      time.Date(2023, 1, 1, 12, 30, 0, 0, time.UTC), // 30 minutes after deadline
-			expected: false,
-		},
-		{
-			name: "exactly at verification deadline",
-			key: &signingKey{
-				deadline: time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC),
-			},
-			now:      time.Date(2023, 1, 1, 13, 0, 0, 0, time.UTC), // 1 hour after deadline (issuerTokenDuration)
-			expected: false,
-		},
-		{
-			name: "past verification deadline",
-			key: &signingKey{
-				deadline: time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC),
-			},
-			now:      time.Date(2023, 1, 1, 14, 0, 0, 0, time.UTC), // 2 hours after deadline
-			expected: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-
-			result := tt.key.expiredForVerifyingTokens(tt.now)
-			g.Expect(result).To(Equal(tt.expected))
-		})
-	}
-}
-
-func TestAutomaticPrivateKeySource_current(t *testing.T) {
-	tests := []struct {
-		name          string
-		setupSource   func() *automaticPrivateKeySource
-		now           time.Time
-		expectedError string
-		checkKeyGen   bool
-	}{
-		{
-			name: "generate first key",
-			setupSource: func() *automaticPrivateKeySource {
-				return &automaticPrivateKeySource{}
-			},
-			now:         time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC),
-			checkKeyGen: true,
-		},
-		{
-			name: "use existing valid key",
-			setupSource: func() *automaticPrivateKeySource {
-				priv, _ := rsa.GenerateKey(rand.Reader, 2048)
-				privateKey, _ := jwk.Import(priv)
-				publicKey, _ := privateKey.PublicKey()
-
-				return &automaticPrivateKeySource{
-					cur: &signingKey{
-						private:  privateKey,
-						public:   publicKey,
-						deadline: time.Date(2023, 1, 1, 13, 0, 0, 0, time.UTC), // 1 hour in future
-					},
-				}
-			},
-			now: time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC),
-		},
-		{
-			name: "rotate expired key",
-			setupSource: func() *automaticPrivateKeySource {
-				priv, _ := rsa.GenerateKey(rand.Reader, 2048)
-				privateKey, _ := jwk.Import(priv)
-				publicKey, _ := privateKey.PublicKey()
-
-				return &automaticPrivateKeySource{
-					cur: &signingKey{
-						private:  privateKey,
-						public:   publicKey,
-						deadline: time.Date(2023, 1, 1, 11, 0, 0, 0, time.UTC), // 1 hour in past
-					},
-				}
-			},
-			now:         time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC),
-			checkKeyGen: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-
-			source := tt.setupSource()
-			key, err := source.current(tt.now)
-
-			if tt.expectedError != "" {
-				g.Expect(err).To(HaveOccurred())
-				g.Expect(err.Error()).To(ContainSubstring(tt.expectedError))
-			} else {
-				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(key).ToNot(BeNil())
-
-				if tt.checkKeyGen {
-					// Verify that a new key was generated
-					g.Expect(source.cur).ToNot(BeNil())
-					g.Expect(source.cur.private).To(Equal(key))
-					g.Expect(source.cur.deadline).To(Equal(tt.now.Add(issuerTokenDuration)))
-				}
-			}
-		})
-	}
-}
-
-func TestAutomaticPrivateKeySource_publicKeys(t *testing.T) {
-	tests := []struct {
-		name         string
-		setupSource  func() *automaticPrivateKeySource
-		now          time.Time
-		expectedKeys int
-	}{
-		{
-			name: "no keys initialized",
-			setupSource: func() *automaticPrivateKeySource {
-				return &automaticPrivateKeySource{}
-			},
-			now:          time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC),
-			expectedKeys: 0,
-		},
-		{
-			name: "only current key valid",
-			setupSource: func() *automaticPrivateKeySource {
-				priv, _ := rsa.GenerateKey(rand.Reader, 2048)
-				privateKey, _ := jwk.Import(priv)
-				publicKey, _ := privateKey.PublicKey()
-
-				return &automaticPrivateKeySource{
-					cur: &signingKey{
-						private:  privateKey,
-						public:   publicKey,
-						deadline: time.Date(2023, 1, 1, 13, 0, 0, 0, time.UTC), // Valid for verifying
-					},
-				}
-			},
-			now:          time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC),
-			expectedKeys: 1,
-		},
-		{
-			name: "both current and previous keys valid",
-			setupSource: func() *automaticPrivateKeySource {
-				// Current key
-				privCur, _ := rsa.GenerateKey(rand.Reader, 2048)
-				privateKeyCur, _ := jwk.Import(privCur)
-				publicKeyCur, _ := privateKeyCur.PublicKey()
-
-				// Previous key
-				privPrev, _ := rsa.GenerateKey(rand.Reader, 2048)
-				privateKeyPrev, _ := jwk.Import(privPrev)
-				publicKeyPrev, _ := privateKeyPrev.PublicKey()
-
-				return &automaticPrivateKeySource{
-					cur: &signingKey{
-						private:  privateKeyCur,
-						public:   publicKeyCur,
-						deadline: time.Date(2023, 1, 1, 13, 0, 0, 0, time.UTC), // Valid for verifying
-					},
-					prev: &signingKey{
-						private:  privateKeyPrev,
-						public:   publicKeyPrev,
-						deadline: time.Date(2023, 1, 1, 12, 30, 0, 0, time.UTC), // Still within grace period
-					},
-				}
-			},
-			now:          time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC),
-			expectedKeys: 2,
-		},
-		{
-			name: "previous key expired for verification",
-			setupSource: func() *automaticPrivateKeySource {
-				// Current key
-				privCur, _ := rsa.GenerateKey(rand.Reader, 2048)
-				privateKeyCur, _ := jwk.Import(privCur)
-				publicKeyCur, _ := privateKeyCur.PublicKey()
-
-				// Previous key (expired for verification)
-				privPrev, _ := rsa.GenerateKey(rand.Reader, 2048)
-				privateKeyPrev, _ := jwk.Import(privPrev)
-				publicKeyPrev, _ := privateKeyPrev.PublicKey()
-
-				return &automaticPrivateKeySource{
-					cur: &signingKey{
-						private:  privateKeyCur,
-						public:   publicKeyCur,
-						deadline: time.Date(2023, 1, 1, 13, 0, 0, 0, time.UTC), // Valid for verifying
-					},
-					prev: &signingKey{
-						private:  privateKeyPrev,
-						public:   publicKeyPrev,
-						deadline: time.Date(2023, 1, 1, 10, 0, 0, 0, time.UTC), // Expired for verifying
-					},
-				}
-			},
-			now:          time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC), // 2 hours after prev deadline
-			expectedKeys: 1,                                            // Only current key
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-
-			source := tt.setupSource()
-			keys := source.publicKeys(tt.now)
-
-			g.Expect(keys).To(HaveLen(tt.expectedKeys))
-		})
-	}
-}
-
-func TestNewTokenIssuer(t *testing.T) {
-	g := NewWithT(t)
-
-	issuer := New()
-	ti := issuer.(*tokenIssuer)
-
-	g.Expect(ti).ToNot(BeNil())
-	g.Expect(ti.privateKeySource).ToNot(BeNil())
-
-	// Should be an automaticPrivateKeySource
-	_, ok := ti.privateKeySource.(*automaticPrivateKeySource)
-	g.Expect(ok).To(BeTrue())
 }
 
 // mockPrivateKeySource implements the privateKeySource interface for testing

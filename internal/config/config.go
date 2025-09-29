@@ -18,7 +18,8 @@ import (
 )
 
 const (
-	MaxGroups = 100
+	MaxGroups         = 100
+	StateCookieMaxAge = 60 // 1 minute
 
 	defaultServerAddr   = ":8080"
 	scopesCacheDuration = 10 * time.Second
