@@ -25,6 +25,7 @@ import (
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/constants"
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/issuer"
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/provider"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/store"
 )
 
 func TestAuthenticate(t *testing.T) {
@@ -70,9 +71,9 @@ func TestAuthenticate(t *testing.T) {
 			tokenIssuer, _, _ := newTestTokenIssuerWithSharedKeys()
 			mockProv := &mockProvider{}
 			conf := newTestConfig()
-			sessionStore := newMemorySessionStore()
+			st := store.NewMemoryStore()
 
-			api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
+			api := newAPI(tokenIssuer, mockProv, conf, st, time.Now)
 
 			req := httptest.NewRequest(http.MethodGet, pathAuthenticate, nil)
 			if tt.requestHost != "" {
@@ -128,9 +129,9 @@ func TestOAuthProtectedResource(t *testing.T) {
 			tokenIssuer := newTestTokenIssuer(nil)
 			mockProv := &mockProvider{}
 			conf := newTestConfig()
-			sessionStore := newMemorySessionStore()
+			st := store.NewMemoryStore()
 
-			api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
+			api := newAPI(tokenIssuer, mockProv, conf, st, time.Now)
 
 			req := httptest.NewRequest(http.MethodGet, pathOAuthProtectedResource, nil)
 			req.Host = tt.requestHost
@@ -233,9 +234,9 @@ func TestOAuthAuthorizationServer(t *testing.T) {
 
 			tokenIssuer := newTestTokenIssuer(nil)
 			mockProv := &mockProvider{}
-			sessionStore := newMemorySessionStore()
+			st := store.NewMemoryStore()
 
-			api := newAPI(tokenIssuer, mockProv, tt.config, sessionStore, time.Now)
+			api := newAPI(tokenIssuer, mockProv, tt.config, st, time.Now)
 
 			req := httptest.NewRequest(http.MethodGet, pathOAuthAuthorizationServer, nil)
 			req.Host = tt.requestHost
@@ -367,9 +368,9 @@ func TestRegister(t *testing.T) {
 			tokenIssuer := newTestTokenIssuer(nil)
 			mockProv := &mockProvider{}
 			conf := setupConfig(g, tt.config)
-			sessionStore := newMemorySessionStore()
+			st := store.NewMemoryStore()
 
-			api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
+			api := newAPI(tokenIssuer, mockProv, conf, st, time.Now)
 
 			req := httptest.NewRequest(http.MethodPost, pathRegister, strings.NewReader(tt.requestBody))
 			req.Header.Set("Content-Type", "application/json")
@@ -411,7 +412,7 @@ func TestAuthorize(t *testing.T) {
 		expectRedirect           bool
 		expectError              bool
 		expectedErrorMessage     string
-		sessionStore             sessionStore
+		st                       store.Store
 		pkceError                bool
 		config                   *config.Config
 		expectScopeSelectionPage bool
@@ -471,7 +472,7 @@ func TestAuthorize(t *testing.T) {
 			queryParams:          fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", constants.AuthorizationServerCodeChallengeMethod),
 			expectedStatus:       http.StatusInternalServerError,
 			expectedErrorMessage: "Failed to generate state",
-			sessionStore:         &mockSessionStore{sessionStore: newMemorySessionStore(), storeTransactionError: errors.New("session store failure")},
+			st:                   &mockStore{Store: store.NewMemoryStore(), storeTransactionError: errors.New("session store failure")},
 		},
 		{
 			name:                 "PKCE generation error",
@@ -711,12 +712,12 @@ func TestAuthorize(t *testing.T) {
 			tokenIssuer := newTestTokenIssuer(nil)
 			mockProv := &mockProvider{}
 			conf := setupConfig(g, tt.config)
-			sessionStore := tt.sessionStore
-			if sessionStore == nil {
-				sessionStore = newMemorySessionStore()
+			st := tt.st
+			if st == nil {
+				st = store.NewMemoryStore()
 			}
 
-			api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
+			api := newAPI(tokenIssuer, mockProv, conf, st, time.Now)
 
 			req := httptest.NewRequest(http.MethodGet, pathAuthorize+"?"+tt.queryParams, nil)
 			req.Host = "example.com"
@@ -783,9 +784,9 @@ func TestAuthorize(t *testing.T) {
 				g.Expect(stateValue).ToNot(BeEmpty())
 
 				// Retrieve the stored transaction and verify scopes were filtered
-				tx, found := sessionStore.retrieveTransaction(stateValue)
+				tx, found := st.RetrieveTransaction(stateValue)
 				g.Expect(found).To(BeTrue())
-				g.Expect(tx.clientParams.scopes).To(Equal(tt.expectedFilteredScopes))
+				g.Expect(tx.ClientParams.Scopes).To(Equal(tt.expectedFilteredScopes))
 			}
 		})
 	}
@@ -801,7 +802,7 @@ func TestCallback(t *testing.T) {
 		exchangeError    error
 		verifyError      error
 		expectedStatus   int
-		sessionStore     sessionStore
+		st               store.Store
 		csrfMismatch     bool
 		retrieveError    bool
 		needsTokenServer bool
@@ -863,7 +864,7 @@ func TestCallback(t *testing.T) {
 			queryParams:      "code=auth-code&state=SESSION_KEY_PLACEHOLDER",
 			tokens:           map[string]string{"access_token": "token"},
 			expectedStatus:   http.StatusInternalServerError,
-			sessionStore:     &mockSessionStore{sessionStore: newMemorySessionStore(), storeError: errors.New("session store failure in callback")},
+			st:               &mockStore{Store: store.NewMemoryStore(), storeError: errors.New("session store failure in callback")},
 			needsTokenServer: true,
 		},
 		{
@@ -945,9 +946,9 @@ func TestCallback(t *testing.T) {
 			}
 
 			conf := newTestConfig()
-			sessionStore := tt.sessionStore
-			if sessionStore == nil {
-				sessionStore = newMemorySessionStore()
+			st := tt.st
+			if st == nil {
+				st = store.NewMemoryStore()
 			}
 
 			// Setup token issuer with potential error
@@ -956,7 +957,7 @@ func TestCallback(t *testing.T) {
 				issueErr = errors.New("key generation failed")
 			}
 			tokenIssuer := newTestTokenIssuer(issueErr)
-			api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
+			api := newAPI(tokenIssuer, mockProv, conf, st, time.Now)
 
 			// For successful callback test, we need the session key to match the cookie value
 			var sessionKey string
@@ -964,22 +965,22 @@ func TestCallback(t *testing.T) {
 				tx := newTestTransaction()
 				// Override transaction host if specified
 				if tt.transactionHost != "" {
-					tx.host = tt.transactionHost
+					tx.Host = tt.transactionHost
 				}
 				var err error
-				sessionKey, err = sessionStore.storeTransaction(tx)
+				sessionKey, err = st.StoreTransaction(tx)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				// For session not found test, replace session store after setting up session
 				if tt.retrieveError {
-					sessionStore = &mockSessionStore{sessionStore: sessionStore, retrieveError: true}
+					st = &mockStore{Store: st, retrieveError: true}
 					// Need to recreate API with updated session store
 					var issueErr error
 					if tt.issueError {
 						issueErr = errors.New("key generation failed")
 					}
 					tokenIssuer = newTestTokenIssuer(issueErr)
-					api = newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
+					api = newAPI(tokenIssuer, mockProv, conf, st, time.Now)
 				}
 			} else {
 				sessionKey = "invalid-state"
@@ -1065,9 +1066,9 @@ func TestToken(t *testing.T) {
 			tokenIssuer, _, _ := newTestTokenIssuerWithSharedKeys()
 			mockProv := &mockProvider{}
 			conf := newTestConfig()
-			sessionStore := newMemorySessionStore()
+			st := store.NewMemoryStore()
 
-			api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
+			api := newAPI(tokenIssuer, mockProv, conf, st, time.Now)
 
 			var authzCode string
 			var jwtToken string
@@ -1075,7 +1076,7 @@ func TestToken(t *testing.T) {
 				tx := newTestTransaction()
 				// Override transaction host if specified
 				if tt.transactionHost != "" {
-					tx.host = tt.transactionHost
+					tx.Host = tt.transactionHost
 				}
 
 				// Issue a real JWT token for this test
@@ -1091,8 +1092,8 @@ func TestToken(t *testing.T) {
 					TokenType:   "Bearer",
 					Expiry:      exp,
 				}
-				s := &session{tx: tx, outcome: outcome}
-				authzCode, err = sessionStore.store(s)
+				s := &store.Session{TX: tx, Outcome: outcome}
+				authzCode, err = st.StoreSession(s)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				// Replace the code in form data
@@ -1140,9 +1141,9 @@ func TestOpenIDConfiguration(t *testing.T) {
 	tokenIssuer := newTestTokenIssuer(nil)
 	mockProv := &mockProvider{}
 	conf := newTestConfig()
-	sessionStore := newMemorySessionStore()
+	st := store.NewMemoryStore()
 
-	api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
+	api := newAPI(tokenIssuer, mockProv, conf, st, time.Now)
 
 	req := httptest.NewRequest(http.MethodGet, pathOpenIDConfiguration, nil)
 	req.Host = "example.com"
@@ -1171,9 +1172,9 @@ func TestJWKS(t *testing.T) {
 	tokenIssuer, _, publicKey := newTestTokenIssuerWithSharedKeys()
 	mockProv := &mockProvider{}
 	conf := newTestConfig()
-	sessionStore := newMemorySessionStore()
+	st := store.NewMemoryStore()
 
-	api := newAPI(tokenIssuer, mockProv, conf, sessionStore, time.Now)
+	api := newAPI(tokenIssuer, mockProv, conf, st, time.Now)
 
 	req := httptest.NewRequest(http.MethodGet, pathJWKS, nil)
 	rec := httptest.NewRecorder()
@@ -1268,40 +1269,40 @@ func (m *mockProvider) VerifyUser(ctx context.Context, ts oauth2.TokenSource) (*
 	return &provider.UserInfo{Username: "test-user@example.com"}, nil
 }
 
-// mockSessionStore allows simulating sessionStore failures
-type mockSessionStore struct {
-	sessionStore
+// mockStore allows simulating st failures
+type mockStore struct {
+	store.Store
 	storeError            error
 	storeTransactionError error
 	retrieveError         bool
 }
 
-func (m *mockSessionStore) store(s *session) (string, error) {
+func (m *mockStore) StoreSession(s *store.Session) (string, error) {
 	if m.storeError != nil {
 		return "", m.storeError
 	}
-	return m.sessionStore.store(s)
+	return m.Store.StoreSession(s)
 }
 
-func (m *mockSessionStore) storeTransaction(tx *transaction) (string, error) {
+func (m *mockStore) StoreTransaction(tx *store.Transaction) (string, error) {
 	if m.storeTransactionError != nil {
 		return "", m.storeTransactionError
 	}
-	return m.sessionStore.storeTransaction(tx)
+	return m.Store.StoreTransaction(tx)
 }
 
-func (m *mockSessionStore) retrieve(key string) (*session, bool) {
+func (m *mockStore) RetrieveSession(key string) (*store.Session, bool) {
 	if m.retrieveError {
 		return nil, false
 	}
-	return m.sessionStore.retrieve(key)
+	return m.Store.RetrieveSession(key)
 }
 
-func (m *mockSessionStore) retrieveTransaction(key string) (*transaction, bool) {
+func (m *mockStore) RetrieveTransaction(key string) (*store.Transaction, bool) {
 	if m.retrieveError {
 		return nil, false
 	}
-	return m.sessionStore.retrieveTransaction(key)
+	return m.Store.RetrieveTransaction(key)
 }
 
 func newTestConfig() *config.Config {
@@ -1343,15 +1344,15 @@ func parseJSONResponse(g *WithT, body []byte) map[string]any {
 	return response
 }
 
-func newTestTransaction() *transaction {
-	return &transaction{
-		clientParams: transactionClientParams{
-			codeChallenge: pkceS256Challenge("test-verifier"),
-			redirectURL:   "https://example.com/callback",
-			state:         "test-state",
+func newTestTransaction() *store.Transaction {
+	return &store.Transaction{
+		ClientParams: store.TransactionClientParams{
+			CodeChallenge: pkceS256Challenge("test-verifier"),
+			RedirectURL:   "https://example.com/callback",
+			State:         "test-state",
 		},
-		codeVerifier: "test-verifier",
-		host:         "example.com",
+		CodeVerifier: "test-verifier",
+		Host:         "example.com",
 	}
 }
 

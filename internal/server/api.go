@@ -14,6 +14,7 @@ import (
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/issuer"
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/logging"
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/provider"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/store"
 )
 
 const (
@@ -34,7 +35,7 @@ const (
 )
 
 func newAPI(ti issuer.Issuer, p provider.Interface, conf *config.Config,
-	sessionStore sessionStore, nowFunc func() time.Time) http.Handler {
+	st store.Store, nowFunc func() time.Time) http.Handler {
 
 	mux := http.NewServeMux()
 
@@ -150,14 +151,14 @@ func newAPI(ti issuer.Issuer, p provider.Interface, conf *config.Config,
 		}
 		codeChallenge := pkceS256Challenge(codeVerifier)
 
-		tx, err := newTransaction(&conf.Proxy, r, codeVerifier, supportedScopeNames)
+		tx, err := store.NewTransaction(&conf.Proxy, r, codeVerifier, supportedScopeNames)
 		if err != nil {
 			l.WithError(err).Error("invalid transaction")
 			http.Error(w, fmt.Sprintf("Invalid parameters: %v", err), http.StatusBadRequest)
 			return
 		}
 
-		state, err := sessionStore.storeTransaction(tx)
+		state, err := st.StoreTransaction(tx)
 		if err != nil {
 			l.WithError(err).Error("failed to generate state")
 			http.Error(w, "Failed to generate state", http.StatusInternalServerError)
@@ -184,13 +185,13 @@ func newAPI(ti issuer.Issuer, p provider.Interface, conf *config.Config,
 			return
 		}
 
-		tx, ok := sessionStore.retrieveTransaction(state)
+		tx, ok := st.RetrieveTransaction(state)
 		if !ok {
 			http.Error(w, "Session expired", http.StatusBadRequest)
 			return
 		}
 
-		if tx.host != r.Host {
+		if tx.Host != r.Host {
 			http.Error(w, "Host mismatch", http.StatusBadRequest)
 			return
 		}
@@ -199,7 +200,7 @@ func newAPI(ti issuer.Issuer, p provider.Interface, conf *config.Config,
 		oauth2Conf := oauth2Config(r, p, conf)
 		oauth2Conf.ClientSecret = conf.Provider.ClientSecret
 		oauth2Token, err := oauth2Conf.Exchange(r.Context(), authorizationCode(r),
-			oauth2.SetAuthURLParam(constants.QueryParamCodeVerifier, tx.codeVerifier))
+			oauth2.SetAuthURLParam(constants.QueryParamCodeVerifier, tx.CodeVerifier))
 		if err != nil {
 			l.WithError(err).Error("failed to exchange authorization code for tokens")
 			http.Error(w, "Failed to exchange authorization code for tokens", http.StatusBadRequest)
@@ -219,7 +220,7 @@ func newAPI(ti issuer.Issuer, p provider.Interface, conf *config.Config,
 		aud := baseURL(r)
 		now := nowFunc()
 		groups := user.Groups
-		scopes := tx.clientParams.scopes
+		scopes := tx.ClientParams.Scopes
 		accessToken, exp, err := ti.Issue(iss, sub, aud, now, groups, scopes)
 		if err != nil {
 			l.WithError(err).Error("failed to issue access token")
@@ -228,16 +229,16 @@ func newAPI(ti issuer.Issuer, p provider.Interface, conf *config.Config,
 		}
 
 		// Store transaction outcome in the session.
-		s := &session{
-			tx: tx,
-			outcome: &oauth2.Token{
+		s := &store.Session{
+			TX: tx,
+			Outcome: &oauth2.Token{
 				AccessToken: accessToken,
 				TokenType:   "Bearer",
 				Expiry:      exp,
 				ExpiresIn:   int64(exp.Sub(now).Milliseconds() / 1000),
 			},
 		}
-		authzCode, err := sessionStore.store(s)
+		authzCode, err := st.StoreSession(s)
 		if err != nil {
 			l.WithError(err).Error("failed to store tokens with authorization code")
 			http.Error(w, "Failed to store tokens with authorization code", http.StatusInternalServerError)
@@ -245,10 +246,10 @@ func newAPI(ti issuer.Issuer, p provider.Interface, conf *config.Config,
 		}
 
 		// Build redirect URL.
-		redirectURI := tx.clientParams.redirectURL
+		redirectURI := tx.ClientParams.RedirectURL
 		redirectParams := url.Values{}
 		redirectParams.Set(constants.QueryParamAuthorizationCode, authzCode)
-		redirectParams.Set(constants.QueryParamState, tx.clientParams.state)
+		redirectParams.Set(constants.QueryParamState, tx.ClientParams.State)
 		redirectURL := fmt.Sprintf("%s?%s", redirectURI, redirectParams.Encode())
 
 		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
@@ -265,24 +266,24 @@ func newAPI(ti issuer.Issuer, p provider.Interface, conf *config.Config,
 
 		authzCode := r.FormValue(constants.QueryParamAuthorizationCode)
 
-		s, ok := sessionStore.retrieve(authzCode)
+		s, ok := st.RetrieveSession(authzCode)
 		if !ok {
 			http.Error(w, "Authorization code expired", http.StatusBadRequest)
 			return
 		}
 
-		if s.tx.host != r.Host {
+		if s.TX.Host != r.Host {
 			http.Error(w, "Host mismatch", http.StatusBadRequest)
 			return
 		}
 
 		// Validate client PKCE.
-		if s.tx.clientParams.codeChallenge != pkceS256Challenge(r.FormValue(constants.QueryParamCodeVerifier)) {
+		if s.TX.ClientParams.CodeChallenge != pkceS256Challenge(r.FormValue(constants.QueryParamCodeVerifier)) {
 			http.Error(w, "PKCE failed", http.StatusBadRequest)
 			return
 		}
 
-		respondJSON(w, r, http.StatusOK, s.outcome)
+		respondJSON(w, r, http.StatusOK, s.Outcome)
 	})
 
 	mux.HandleFunc(pathOpenIDConfiguration, func(w http.ResponseWriter, r *http.Request) {

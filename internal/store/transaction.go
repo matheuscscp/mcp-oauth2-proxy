@@ -1,4 +1,4 @@
-package server
+package store
 
 import (
 	"fmt"
@@ -9,26 +9,26 @@ import (
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/constants"
 )
 
-// transaction represents an OAuth 2.0 authorization request.
+// Transaction represents an OAuth 2.0 authorization request.
 // It contains the client parameters required for the authorization
 // flows that must be supported by the proxy, the code verifier
 // for PKCE with the configured IdP, and the host that initiated
-// the transaction.
-type transaction struct {
-	clientParams transactionClientParams
-	codeVerifier string
-	host         string
+// the Transaction.
+type Transaction struct {
+	ClientParams TransactionClientParams
+	CodeVerifier string
+	Host         string
 }
 
-type transactionClientParams struct {
-	codeChallenge string
-	redirectURL   string
-	scopes        []string
-	state         string
+type TransactionClientParams struct {
+	CodeChallenge string
+	RedirectURL   string
+	Scopes        []string
+	State         string
 }
 
-func newTransaction(conf *config.ProxyConfig, r *http.Request,
-	codeVerifier string, hostScopes []string) (*transaction, error) {
+func NewTransaction(conf *config.ProxyConfig, r *http.Request,
+	codeVerifier string, hostScopes []string) (*Transaction, error) {
 
 	host := r.Host
 
@@ -61,14 +61,14 @@ func newTransaction(conf *config.ProxyConfig, r *http.Request,
 		return nil, fmt.Errorf("'%s' is not supported for %s, only %s is allowed", ccm, constants.QueryParamCodeChallengeMethod, allowedCCM)
 	}
 
-	return &transaction{
-		clientParams: transactionClientParams{
-			codeChallenge: codeChallenge,
-			redirectURL:   redirectURI,
-			scopes:        scopes,
-			state:         state,
+	return &Transaction{
+		ClientParams: TransactionClientParams{
+			CodeChallenge: codeChallenge,
+			RedirectURL:   redirectURI,
+			Scopes:        scopes,
+			State:         state,
 		},
-		codeVerifier: codeVerifier,
-		host:         host,
+		CodeVerifier: codeVerifier,
+		Host:         host,
 	}, nil
 }
