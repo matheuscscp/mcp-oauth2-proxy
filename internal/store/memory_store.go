@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 )
 
 const (
@@ -64,7 +66,7 @@ func (m *memoryStore) StoreSession(s *Session) (string, error) {
 		}
 
 		// Store the session and return the key.
-		s.expiresAt = time.Now().Add(timeout)
+		s.expiresAt = time.Now().Add(config.TransactionTimeout)
 		m.sessions[sessionKey(key)] = s
 		m.evictionQueue = append(m.evictionQueue, sessionKey(key))
 		return key, nil
