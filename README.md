@@ -213,7 +213,6 @@ The main configuration options are:
 - `proxy.hosts[].endpoint` (optional): The internal endpoint where the MCP server can be reached by the proxy. Used for listing tools and scopes.
 - `proxy.disableConsentScreen` (optional): Disable the permissions consent screen. Defaults to `false`.
 - `proxy.allowedRedirectURLs` (optional): List of Go regular expressions for allowed redirect URLs.
-- `proxy.cors` (optional): Enable CORS support. Defaults to `false`.
 - `networkPolicy.create` (optional): Create a NetworkPolicy to restrict access to the proxy. Defaults to `true`.
 - `ingress.enabled` (optional): Enable ingress for external access. Defaults to `false`.
 - `podMonitor.enabled` (optional): Enable Prometheus monitoring. Defaults to `false`.
