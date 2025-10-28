@@ -2,13 +2,13 @@ package config
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"testing"
 	"time"
 
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	. "github.com/onsi/gomega"
 )
 
@@ -358,47 +358,60 @@ func TestProxyConfig_getSupportedScopes(t *testing.T) {
 
 // createMockMCPServer creates a test MCP server with scopes metadata
 func createMockMCPServer(scopes []ScopeConfig) *httptest.Server {
-	mcpServer := server.NewMCPServer("test-mcp-server", "1.0.0",
-		server.WithToolCapabilities(true),
-		server.WithHooks(&server.Hooks{
-			OnAfterListTools: []server.OnAfterListToolsFunc{
-				func(ctx context.Context, id any, message *mcp.ListToolsRequest, result *mcp.ListToolsResult) {
-					// Add scopes to the metadata
-					if result.Meta == nil {
-						result.Meta = &mcp.Meta{
-							AdditionalFields: make(map[string]any),
-						}
-					}
-					result.Meta.AdditionalFields["scopes"] = scopes
-				},
-			},
-		}),
+	mcpServer := mcp.NewServer(&mcp.Implementation{
+		Name:    "test-mcp-server",
+		Version: "1.0.0",
+	}, &mcp.ServerOptions{
+		HasTools: true,
+	})
+	mcpServer.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (result mcp.Result, err error) {
+			res, err := next(ctx, method, req)
+			if method == "tools/list" && err == nil {
+				listToolsRes := res.(*mcp.ListToolsResult)
+				if listToolsRes.Meta == nil {
+					listToolsRes.Meta = make(mcp.Meta)
+				}
+				listToolsRes.Meta["scopes"] = scopes
+			}
+			return res, err
+		}
+	})
+	handler := mcp.NewStreamableHTTPHandler(
+		func(*http.Request) *mcp.Server { return mcpServer },
+		&mcp.StreamableHTTPOptions{},
 	)
-
-	// Create and return the test server
-	return server.NewTestStreamableHTTPServer(mcpServer)
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", handler)
+	return httptest.NewServer(handler)
 }
 
 // createMockMCPServerWithBogusJSON creates a test MCP server that returns invalid JSON in metadata
 func createMockMCPServerWithBogusJSON() *httptest.Server {
-	mcpServer := server.NewMCPServer("test-mcp-server", "1.0.0",
-		server.WithToolCapabilities(true),
-		server.WithHooks(&server.Hooks{
-			OnAfterListTools: []server.OnAfterListToolsFunc{
-				func(ctx context.Context, id any, message *mcp.ListToolsRequest, result *mcp.ListToolsResult) {
-					// Add invalid data that will cause JSON unmarshaling to fail
-					if result.Meta == nil {
-						result.Meta = &mcp.Meta{
-							AdditionalFields: make(map[string]any),
-						}
-					}
-					// Create a struct that will marshal to JSON but unmarshal incorrectly
-					result.Meta.AdditionalFields["scopes"] = "this is not a valid scope array"
-				},
-			},
-		}),
+	mcpServer := mcp.NewServer(&mcp.Implementation{
+		Name:    "test-mcp-server",
+		Version: "1.0.0",
+	}, &mcp.ServerOptions{
+		HasTools: true,
+	})
+	mcpServer.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (result mcp.Result, err error) {
+			res, err := next(ctx, method, req)
+			if method == "tools/list" && err == nil {
+				listToolsRes := res.(*mcp.ListToolsResult)
+				if listToolsRes.Meta == nil {
+					listToolsRes.Meta = make(mcp.Meta)
+				}
+				listToolsRes.Meta["scopes"] = "this is not a valid scope array"
+			}
+			return res, err
+		}
+	})
+	handler := mcp.NewStreamableHTTPHandler(
+		func(*http.Request) *mcp.Server { return mcpServer },
+		&mcp.StreamableHTTPOptions{},
 	)
-
-	// Create and return the test server
-	return server.NewTestStreamableHTTPServer(mcpServer)
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", handler)
+	return httptest.NewServer(handler)
 }
