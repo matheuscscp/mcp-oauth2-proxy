@@ -73,6 +73,32 @@ func (m *mockFieldLogger) Errorln(args ...any)                 {}
 func (m *mockFieldLogger) Fatalln(args ...any)                 {}
 func (m *mockFieldLogger) Panicln(args ...any)                 {}
 
+func TestLoadLevel(t *testing.T) {
+	t.Run("default level", func(t *testing.T) {
+		g := NewWithT(t)
+		err := LoadLevel()
+		g.Expect(err).NotTo(HaveOccurred())
+		l := logrus.GetLevel()
+		g.Expect(l).To(Equal(logrus.InfoLevel))
+	})
+
+	t.Run("valid level", func(t *testing.T) {
+		g := NewWithT(t)
+		t.Setenv("LOG_LEVEL", "debug")
+		err := LoadLevel()
+		g.Expect(err).NotTo(HaveOccurred())
+		l := logrus.GetLevel()
+		g.Expect(l).To(Equal(logrus.DebugLevel))
+	})
+
+	t.Run("invalid level", func(t *testing.T) {
+		g := NewWithT(t)
+		t.Setenv("LOG_LEVEL", "invalid-level")
+		err := LoadLevel()
+		g.Expect(err).To(MatchError("invalid LOG_LEVEL 'invalid-level', must be one of [panic, fatal, error, warning, info, debug, trace]"))
+	})
+}
+
 func TestFromContext(t *testing.T) {
 	tests := []struct {
 		name         string
