@@ -7,6 +7,7 @@ import (
 
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/constants"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/logging"
 )
 
 // Transaction represents an OAuth 2.0 authorization request.
@@ -42,12 +43,18 @@ func NewTransaction(conf *config.ProxyConfig, r *http.Request,
 		supportedScopes[s] = true
 	}
 
-	scopes := []string{}
+	var requestedScopes []string
+	grantedScopes := []string{}
 	for s := range strings.SplitSeq(q.Get(constants.QueryParamScopes), " ") {
-		if s != "" && supportedScopes[s] {
-			scopes = append(scopes, s)
+		if s == "" {
+			continue
+		}
+		requestedScopes = append(requestedScopes, s)
+		if supportedScopes[s] {
+			grantedScopes = append(grantedScopes, s)
 		}
 	}
+	logging.FromRequest(r).WithField("requestScopes", requestedScopes).Debug("transaction requested scopes")
 
 	if !conf.ValidateRedirectURL(redirectURI) {
 		return nil, fmt.Errorf("%s is not in the allow list: %s", constants.QueryParamRedirectURI, redirectURI)
@@ -65,7 +72,7 @@ func NewTransaction(conf *config.ProxyConfig, r *http.Request,
 		ClientParams: TransactionClientParams{
 			CodeChallenge: codeChallenge,
 			RedirectURL:   redirectURI,
-			Scopes:        scopes,
+			Scopes:        grantedScopes,
 			State:         state,
 		},
 		CodeVerifier: codeVerifier,
