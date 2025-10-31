@@ -26,7 +26,7 @@ func FromContext(ctx context.Context) logrus.FieldLogger {
 			return logger
 		}
 	}
-	return logrus.WithContext(ctx)
+	return logrus.StandardLogger()
 }
 
 func IntoRequest(r *http.Request, logger logrus.FieldLogger) *http.Request {
