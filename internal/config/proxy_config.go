@@ -8,8 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mark3labs/mcp-go/client"
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/constants"
 )
@@ -114,20 +113,17 @@ func (p *ProxyConfig) getSupportedScopes(ctx context.Context, h *HostConfig, now
 }
 
 func (p *ProxyConfig) fetchSupportedScopes(ctx context.Context, endpoint string) ([]ScopeConfig, error) {
-	c, err := client.NewStreamableHttpClient(endpoint)
+	client := mcp.NewClient(&mcp.Implementation{}, nil)
+	cs, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: endpoint}, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create MCP client: %w", err)
+		return nil, fmt.Errorf("failed to create MCP client for: %w", err)
 	}
-	defer c.Close()
-	_, err = c.Initialize(ctx, mcp.InitializeRequest{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize MCP client: %w", err)
-	}
-	resp, err := c.ListTools(ctx, mcp.ListToolsRequest{})
+	defer cs.Close()
+	resp, err := cs.ListTools(ctx, &mcp.ListToolsParams{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list MCP tools: %w", err)
 	}
-	b, err := json.Marshal(resp.Meta.AdditionalFields)
+	b, err := json.Marshal(resp.Meta)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal MCP tools: %w", err)
 	}
