@@ -73,6 +73,32 @@ func (m *mockFieldLogger) Errorln(args ...any)                 {}
 func (m *mockFieldLogger) Fatalln(args ...any)                 {}
 func (m *mockFieldLogger) Panicln(args ...any)                 {}
 
+func TestLoadLevel(t *testing.T) {
+	t.Run("default level", func(t *testing.T) {
+		g := NewWithT(t)
+		err := LoadLevel()
+		g.Expect(err).NotTo(HaveOccurred())
+		l := logrus.GetLevel()
+		g.Expect(l).To(Equal(logrus.InfoLevel))
+	})
+
+	t.Run("valid level", func(t *testing.T) {
+		g := NewWithT(t)
+		t.Setenv("LOG_LEVEL", "debug")
+		err := LoadLevel()
+		g.Expect(err).NotTo(HaveOccurred())
+		l := logrus.GetLevel()
+		g.Expect(l).To(Equal(logrus.DebugLevel))
+	})
+
+	t.Run("invalid level", func(t *testing.T) {
+		g := NewWithT(t)
+		t.Setenv("LOG_LEVEL", "invalid-level")
+		err := LoadLevel()
+		g.Expect(err).To(MatchError("invalid LOG_LEVEL 'invalid-level', must be one of [panic, fatal, error, warning, info, debug, trace]"))
+	})
+}
+
 func TestFromContext(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -122,10 +148,9 @@ func TestFromContext(t *testing.T) {
 				// The returned logger should be the same as the stored one
 				g.Expect(logger).To(Equal(storedLogger))
 			} else {
-				// If no custom logger, it should return a logrus entry with context
-				entry, ok := logger.(*logrus.Entry)
+				// If no custom logger, it should return a logrus Logger
+				_, ok := logger.(*logrus.Logger)
 				g.Expect(ok).To(BeTrue())
-				g.Expect(entry.Context).To(Equal(ctx))
 			}
 		})
 	}
@@ -170,8 +195,8 @@ func TestFromRequest(t *testing.T) {
 				g.Expect(storedLogger).ToNot(BeNil())
 				g.Expect(logger).To(Equal(storedLogger))
 			} else {
-				// If no custom logger, it should return a logrus entry
-				_, ok := logger.(*logrus.Entry)
+				// If no custom logger, it should return a logrus logger
+				_, ok := logger.(*logrus.Logger)
 				g.Expect(ok).To(BeTrue())
 			}
 		})
@@ -304,7 +329,7 @@ func TestConcurrentAccess(t *testing.T) {
 
 	// Concurrently access the logger from multiple goroutines
 	done := make(chan bool, 100)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		go func() {
 			retrievedLogger := FromContext(ctx)
 			g.Expect(retrievedLogger).To(Equal(logger))
@@ -347,19 +372,4 @@ func TestFromContextWithCanceledContext(t *testing.T) {
 	// We should still be able to retrieve the logger even from a cancelled context
 	retrievedLogger := FromContext(ctx)
 	g.Expect(retrievedLogger).To(Equal(logger))
-}
-
-func TestTypeAssertion(t *testing.T) {
-	g := NewWithT(t)
-
-	// Test that non-logger types stored in context don't cause issues
-	ctx := context.WithValue(context.Background(), contextKeyLogger{}, "not a logger")
-
-	// FromContext should handle this gracefully and return default logger
-	logger := FromContext(ctx)
-	g.Expect(logger).ToNot(BeNil())
-
-	// It should return a default logrus entry
-	_, ok := logger.(*logrus.Entry)
-	g.Expect(ok).To(BeTrue())
 }

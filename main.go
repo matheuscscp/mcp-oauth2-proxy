@@ -13,11 +13,17 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
+	"github.com/matheuscscp/mcp-oauth2-proxy/internal/logging"
 	provider "github.com/matheuscscp/mcp-oauth2-proxy/internal/provider/factory"
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/server"
 )
 
 func main() {
+	// Load logging level.
+	if err := logging.LoadLevel(); err != nil {
+		logrus.WithError(err).Fatal("failed to initialize logger")
+	}
+
 	// Listen for termination signals.
 	signalReceived := make(chan os.Signal, 2)
 	signal.Notify(signalReceived, os.Interrupt, syscall.SIGTERM)
