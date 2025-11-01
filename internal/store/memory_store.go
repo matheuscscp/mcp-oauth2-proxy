@@ -42,8 +42,8 @@ func (m *memoryStore) StoreSession(s *Session) (string, error) {
 	defer func() { m.collectGarbage(); m.mu.Unlock() }()
 
 	for {
-		// The algorithm below for generating the key makes it usable both as
-		// as an authorization code or as a CSRF state.
+		// A PKCE code verifier can also be used as
+		// an authorization code or as a CSRF state.
 		generateKey := oauth2.GenerateVerifier
 		if m.generateKey != nil {
 			generateKey = m.generateKey
