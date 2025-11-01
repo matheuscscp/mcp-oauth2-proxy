@@ -526,39 +526,20 @@ func TestMemoryStore_MaxSessionSize(t *testing.T) {
 	g.Expect(store.evictionQueue).To(BeEmpty())
 }
 
-func TestMemoryStore_KeyGenerationError(t *testing.T) {
-	g := NewWithT(t)
-	store := NewMemoryStore()
-
-	// Inject a key generator that always fails
-	store.generateKey = func() ([32]byte, error) {
-		return [32]byte{}, fmt.Errorf("key generation failed")
-	}
-
-	session := &Session{TX: &Transaction{Host: "example.com"}}
-	_, err := store.StoreSession(session)
-
-	g.Expect(err).To(HaveOccurred())
-	g.Expect(err.Error()).To(ContainSubstring("failed to generate key for session"))
-	g.Expect(err.Error()).To(ContainSubstring("key generation failed"))
-}
-
 func TestMemoryStore_KeyCollisionHandling(t *testing.T) {
 	g := NewWithT(t)
 	store := NewMemoryStore()
 
 	// Inject a key generator that returns the same key twice, then a different one
 	callCount := 0
-	store.generateKey = func() ([32]byte, error) {
+	store.generateKey = func() string {
 		callCount++
 		if callCount <= 2 {
 			// Return the same key for first two calls (collision)
-			return [32]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-				17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}, nil
+			return "first-key"
 		}
 		// Return a different key for third call
-		return [32]byte{32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17,
-			16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1}, nil
+		return "second-key"
 	}
 
 	// Store first session

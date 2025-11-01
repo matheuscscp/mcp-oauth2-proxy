@@ -1,13 +1,12 @@
 package store
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/matheuscscp/mcp-oauth2-proxy/internal/config"
+	"golang.org/x/oauth2"
 )
 
 const (
@@ -20,7 +19,7 @@ type memoryStore struct {
 	evictionQueue []sessionKey
 	mu            sync.Mutex
 
-	generateKey func() ([32]byte, error)
+	generateKey func() string
 }
 
 func NewMemoryStore() *memoryStore {
@@ -45,15 +44,11 @@ func (m *memoryStore) StoreSession(s *Session) (string, error) {
 	for {
 		// The algorithm below for generating the key makes it usable both as
 		// as an authorization code or as a CSRF state.
-		generateKey := generateSecureCode
+		generateKey := oauth2.GenerateVerifier
 		if m.generateKey != nil {
 			generateKey = m.generateKey
 		}
-		keyBytes, err := generateKey()
-		if err != nil {
-			return "", fmt.Errorf("failed to generate key for session: %w", err)
-		}
-		key := base64.RawURLEncoding.EncodeToString(keyBytes[:])
+		key := generateKey()
 		if _, ok := m.sessions[sessionKey(key)]; ok {
 			continue
 		}
@@ -108,12 +103,4 @@ func (m *memoryStore) collectGarbage() {
 		}
 	}
 	m.evictionQueue = evictionQueue
-}
-
-// generateSecureCode generates a random 32-byte key. It can be used
-// as an authorization code or as a CSRF state.
-func generateSecureCode() ([32]byte, error) {
-	var b [32]byte
-	_, err := rand.Read(b[:])
-	return b, err
 }

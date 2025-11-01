@@ -143,13 +143,8 @@ func newAPI(ti issuer.Issuer, p provider.Interface, conf *config.Config,
 		}
 
 		// Prepare PKCE with configured IdP.
-		codeVerifier, err := pkceVerifier()
-		if err != nil {
-			l.WithError(err).Error("failed to generate code verifier")
-			http.Error(w, "Failed to generate code verifier", http.StatusInternalServerError)
-			return
-		}
-		codeChallenge := pkceS256Challenge(codeVerifier)
+		codeVerifier := oauth2.GenerateVerifier()
+		codeChallenge := oauth2.S256ChallengeFromVerifier(codeVerifier)
 
 		tx, err := store.NewTransaction(&conf.Proxy, r, codeVerifier, supportedScopeNames)
 		if err != nil {
@@ -278,7 +273,7 @@ func newAPI(ti issuer.Issuer, p provider.Interface, conf *config.Config,
 		}
 
 		// Validate client PKCE.
-		if s.TX.ClientParams.CodeChallenge != pkceS256Challenge(r.FormValue(constants.QueryParamCodeVerifier)) {
+		if s.TX.ClientParams.CodeChallenge != oauth2.S256ChallengeFromVerifier(r.FormValue(constants.QueryParamCodeVerifier)) {
 			http.Error(w, "PKCE failed", http.StatusBadRequest)
 			return
 		}
