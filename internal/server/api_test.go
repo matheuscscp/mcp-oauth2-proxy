@@ -412,7 +412,6 @@ func TestAuthorize(t *testing.T) {
 		expectError              bool
 		expectedErrorMessage     string
 		st                       store.Store
-		pkceError                bool
 		config                   *config.Config
 		expectScopeSelectionPage bool
 		expectScopeTransaction   bool
@@ -472,13 +471,6 @@ func TestAuthorize(t *testing.T) {
 			expectedStatus:       http.StatusInternalServerError,
 			expectedErrorMessage: "Failed to generate state",
 			st:                   &mockStore{Store: store.NewMemoryStore(), storeTransactionError: errors.New("session store failure")},
-		},
-		{
-			name:                 "PKCE generation error",
-			queryParams:          fmt.Sprintf("response_type=code&code_challenge_method=%s&redirect_uri=https://example.com/callback&state=test-state", constants.AuthorizationServerCodeChallengeMethod),
-			expectedStatus:       http.StatusInternalServerError,
-			expectedErrorMessage: "Failed to generate code verifier",
-			pkceError:            true,
 		},
 		{
 			name:           "valid authorize request",
@@ -698,15 +690,6 @@ func TestAuthorize(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-
-			// Handle PKCE error override
-			if tt.pkceError {
-				originalPkceVerifier := pkceVerifier
-				defer func() { pkceVerifier = originalPkceVerifier }()
-				pkceVerifier = func() (string, error) {
-					return "", errors.New("PKCE generation failed")
-				}
-			}
 
 			tokenIssuer := newTestTokenIssuer(nil)
 			mockProv := &mockProvider{}
@@ -1353,7 +1336,7 @@ func parseJSONResponse(g *WithT, body []byte) map[string]any {
 func newTestTransaction() *store.Transaction {
 	return &store.Transaction{
 		ClientParams: store.TransactionClientParams{
-			CodeChallenge: pkceS256Challenge("test-verifier"),
+			CodeChallenge: oauth2.S256ChallengeFromVerifier("test-verifier"),
 			RedirectURL:   "https://example.com/callback",
 			State:         "test-state",
 		},
